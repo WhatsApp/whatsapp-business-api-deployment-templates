@@ -1,0 +1,6 @@
+debug
+.DS_Store
+.vscode
+.terraform*
+*.tfplan
+*.bk

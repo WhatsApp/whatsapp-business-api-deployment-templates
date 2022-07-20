@@ -1,0 +1,659 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+
+# WhatsApp Business API Instance Monitoring CFN Version 1.0.1
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AWS CloudFormation template to create instance monitoring for
+  WhatsApp Business API Client with Prometheus and Grafana.
+  This template assumes WhatsApp Business API Client has been created and is running.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "WhatsApp Business API stack info"
+        Parameters:
+          - WABizApiStack
+      - Label:
+          default: "Network configuration"
+        Parameters:
+          - VpcId
+          - DeploymentSubnet
+          - LBScheme
+          - LBSubnet
+      - Label:
+          default: "Monitoring stack configuration"
+        Parameters:
+          - KeyName
+          - WAEntContRegistry
+          - WAEntContTag
+      - Label:
+          default: "WhatsApp Business API database info"
+        Parameters:
+          - DBUser
+          - DBPassword
+      - Label:
+          default: "WhatsApp Business API access point"
+        Parameters:
+          - WAWebUsername
+          - WAWebPassword
+      - Label:
+          default: "Grafana"
+        Parameters:
+          - GrafanaAdminPassword
+          - GrafanaEnableSmtp
+          - GrafanaSmtpHost
+          - GrafanaSmtpUser
+          - GrafanaSmtpPassword
+
+Parameters:
+  WABizApiStack:
+    Type: String
+    Description: Name of the WhatsApp Business API stack to set up monitoring for
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the monitoring EC2 instance
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that has access to WAEntLB and DBHostname of the WhatsApp Business API stack
+  DeploymentSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select 1 subnet in the selected VPC to deploy the monitoring EC2 instance.
+  LBScheme:
+    Description: LoadBalancer scheme for the Grafana dashboard. Internal (private) or internet-facing (public)
+    Type: String
+    Default: internet-facing
+    AllowedValues:
+      - internal
+      - internet-facing
+    ConstraintDescription: Please choose a valid LoadBalancer scheme
+  LBSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select 1 subnet for the load balancer. Must match LBScheme - public for internet-facing, and private for internal. Must be in the same availability zone as DeploymentSubnet.
+
+  WAEntContRegistry:
+    Description: WhatsApp Business API docker registry
+    Type: String
+    Default: docker.whatsapp.biz
+
+  WAEntContTag:
+    Description: "Same as the version used for the WhatsApp Business API stack (e.g.: v2.37.1, do NOT use 'latest')"
+    Type: String
+
+  # DB
+  DBUser:
+    NoEcho: "true"
+    Description: Username to access WhatsApp Business API DB
+    Type: String
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: "true"
+    Description: Password of DBUser
+    Type: String
+    MinLength: "8"
+    MaxLength: "41"
+    ConstraintDescription: must have at least 8 & at most 41 characters
+
+  # Monitoring
+  WAWebUsername:
+    Description: "WhatsApp Business API Username"
+    Type: String
+  WAWebPassword:
+    NoEcho: "true"
+    Description: "Password for WAWebUsername"
+    Type: String
+  GrafanaAdminPassword:
+    NoEcho: "true"
+    Description: "You will use this as the login password for the Grafana dashboard when the stack is created"
+    Type: String
+  GrafanaEnableSmtp:
+    Default: 0
+    Description: "Enable SMTP for setting up email alert. Value 0 means disable, and 1 means enable"
+    Type: Number
+    AllowedValues: [0, 1]
+  GrafanaSmtpHost:
+    Description: "SMTP host used in email alert, e,g, smtp.gmail.com:465"
+    Type: String
+  GrafanaSmtpUser:
+    Description: "SMTP user name used in email alert"
+    Type: String
+  GrafanaSmtpPassword:
+    NoEcho: "true"
+    Description: "SMTP password used in email alert"
+    Type: String
+
+Mappings:
+  AWSRegionToAMI:
+    ap-south-1: # Mumbai
+      AMIID: ami-026f33d38b6410e30
+    eu-west-2: # London
+      AMIID: ami-00000000
+    sa-east-1: # São Paulo
+      AMIID: ami-00000000
+    ap-northeast-1: # Tokyo
+      AMIID: ami-045f38c93733dd48d
+    ap-northeast-2: # Seoul
+      AMIID: ami-06cf2a72dadf92410
+    ap-southeast-1: # Singapore
+      AMIID: ami-0b4dd9d65556cac22
+    ap-southeast-2: # Sydney
+      AMIID: ami-08bd00d7713a39e7d
+    eu-central-1: # Frankfurt
+      AMIID: ami-04cf43aca3e6f3de3
+    eu-west-1: # Ireland
+      AMIID: ami-0ff760d16d9497662
+    us-east-1: # N. Virginia
+      AMIID: ami-02eac2c0129f6376b
+    us-east-2: # Ohio
+      AMIID: ami-0f2b4fc905b0bd1f1
+    us-west-1: # N. California
+      AMIID: ami-074e2d6769f445be5
+    us-west-2: # Oregon
+      AMIID: ami-01ed306a12b7d1c96
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS Security Group
+      VpcId: !Ref "VpcId"
+
+  EcsSecurityGroupSSHinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "22"
+      ToPort: "22"
+      CidrIp: 0.0.0.0/0
+
+  EcsSecurityGroupGrafanaPorts:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "3000"
+      ToPort: "3000"
+      CidrIp: 0.0.0.0/0
+
+  EcsSecurityGroupPrometheusPorts:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "9090"
+      ToPort: "9090"
+      CidrIp: 0.0.0.0/0
+
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+  WAMonitoringSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Name: !Sub "${AWS::StackName}-Secret"
+      Description: Secret to store secrets required to create the monitoring stack, including DBPassword, WAWebPassword, GrafanaAdminPassword
+      SecretString: !Join
+        - ""
+        - - '{"wa_web_pwd": "'
+          - !Ref WAWebPassword
+          - '", "grafana_pwd": "'
+          - !Ref GrafanaAdminPassword
+          - '", "grafana_smtp_pwd": "'
+          - !Ref GrafanaSmtpPassword
+          - '", "data_src_name": "'
+          - !Join
+            - ""
+            - - !Ref DBUser
+              - ":"
+              - !Ref DBPassword
+              - "@("
+              - Fn::ImportValue: !Sub "${WABizApiStack}-DBHostname"
+              - ":"
+              - Fn::ImportValue: !Sub "${WABizApiStack}-DBPort"
+              - ")/"
+          - '"}'
+
+  WAMonitoringTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: mysqld-exporter
+          Image: "prom/mysqld-exporter:v0.10.0"
+          MemoryReservation: "1024"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref "CloudwatchLogsGroup"
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: mysql-exporter
+          PortMappings:
+            - ContainerPort: 9104
+              HostPort: 9104
+          Secrets:
+            - Name: DATA_SOURCE_NAME
+              ValueFrom: !Sub "${WAMonitoringSecret}:data_src_name::"
+        - Name: prometheus
+          Image: !Sub "${WAEntContRegistry}/prometheus:${WAEntContTag}"
+          MemoryReservation: "1024"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref "CloudwatchLogsGroup"
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: prometheus
+          User: "root"
+          Links: ["mysqld-exporter"]
+          MountPoints:
+            - ContainerPath: /prometheus-data
+              SourceVolume: prom-vol
+          PortMappings:
+            - ContainerPort: 9090
+              HostPort: 9090
+          Environment:
+            - Name: WA_WEB_ENDPOINT
+              Value: !Join
+                - ""
+                - - Fn::ImportValue: !Sub "${WABizApiStack}-WAEntLB"
+                  - ":443"
+            - Name: WA_WEB_USERNAME
+              Value: !Ref WAWebUsername
+            - Name: WA_MYSQLD_EXPORTER_ENDPOINT
+              Value: "mysqld-exporter:9104"
+            - Name: WA_CORE_ENDPOINT
+              Value:
+                Fn::ImportValue: !Sub "${WABizApiStack}-WAEntLB"
+            - Name: WA_NODE_EXPORTER_PORT
+              Value: 9100
+            - Name: WA_CADVISOR_PORT
+              Value: 8080
+            - Name: WA_PROMETHEUS_STORAGE_TSDB_RETENTION
+              Value: 15d
+          Secrets:
+            - Name: WA_WEB_PASSWORD
+              ValueFrom: !Sub "${WAMonitoringSecret}:wa_web_pwd::"
+        - Name: grafana
+          Image: !Sub "${WAEntContRegistry}/grafana:${WAEntContTag}"
+          MemoryReservation: "1024"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref "CloudwatchLogsGroup"
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: grafana
+          Links: ["prometheus"]
+          PortMappings:
+            - ContainerPort: 3000
+              HostPort: 3000
+          MountPoints:
+            - ContainerPath: /var/lib/grafana
+              SourceVolume: grafana-vol
+          Environment:
+            - Name: WA_PROMETHEUS_ENDPOINT
+              Value: http://prometheus:9090
+            - Name: GF_SMTP_ENABLED
+              Value: !Ref GrafanaEnableSmtp
+            - Name: GF_SMTP_HOST
+              Value: !Ref GrafanaSmtpHost
+            - Name: GF_SMTP_USER
+              Value: !Ref GrafanaSmtpUser
+            - Name: GF_SMTP_SKIP_VERIFY
+              Value: 1
+          Secrets:
+            - Name: GF_SECURITY_ADMIN_PASSWORD
+              ValueFrom: !Sub "${WAMonitoringSecret}:grafana_pwd::"
+            - Name: GF_SMTP_PASSWORD
+              ValueFrom: !Sub "${WAMonitoringSecret}:grafana_smtp_pwd::"
+      Volumes:
+        - Name: prom-vol
+          Host:
+            SourcePath: /prometheus-data
+        - Name: grafana-vol
+          Host:
+            SourcePath: /var/lib/grafana
+
+  WAMonitoringLB:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      ConnectionDrainingPolicy:
+        Enabled: "true"
+        Timeout: "15"
+      ConnectionSettings:
+        IdleTimeout: 30
+      HealthCheck:
+        Target: "TCP:3000"
+        HealthyThreshold: "2"
+        UnhealthyThreshold: "3"
+        Interval: "5" # '10'
+        Timeout: "2"
+      LoadBalancerName: !Sub "${AWS::StackName}-LB"
+      Listeners:
+        - LoadBalancerPort: "3000"
+          InstancePort: "3000"
+          Protocol: TCP
+        - LoadBalancerPort: "9090"
+          InstancePort: "9090"
+          Protocol: TCP
+      Scheme: !Ref "LBScheme"
+      SecurityGroups: [!Ref "EcsSecurityGroup"]
+      Subnets: [!Ref "LBSubnet"]
+
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: [!Ref "DeploymentSubnet"]
+      LaunchConfigurationName: !Ref "ContainerInstances"
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      LoadBalancerNames: [!Ref "WAMonitoringLB"]
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: "true"
+
+  ContainerInstances:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          DockerConfig:
+            - pkg_install
+            - ecs_agent_setup
+        pkg_install:
+          commands:
+            01_update_and_prepare:
+              command: |
+                yum update -y
+                yum install -y wget yum-utils
+                yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                yum makecache fast
+            02_pkg_install:
+              command: |
+                yum install -y docker-ce mysql
+                yum install -y epel-release
+                yum install -y python-boto3
+                pip3 install awscli
+        ecs_agent_setup:
+          ## See https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-agent-install.html
+          files:
+            /etc/ecs/ecs.config:
+              content: |
+                ECS_DATADIR=/data
+                ECS_ENABLE_TASK_IAM_ROLE=true
+                ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true
+                ECS_LOGFILE=/log/ecs-agent.log
+                ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs"]
+                ECS_LOGLEVEL=info
+                ECS_CLUSTER=default
+                ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/systemd/system/docker-container@ecs-agent.service:
+              content: |
+                [Unit]
+                Description=Docker Container %I
+                Requires=docker.service
+                After=docker.service
+
+                [Service]
+                Restart=always
+                ExecStart=/usr/bin/docker run --name %i \
+                  --privileged \
+                  --restart=on-failure:10 \
+                  --volume=/var/run:/var/run \
+                  --volume=/var/log/ecs/:/log:Z \
+                  --volume=/var/lib/ecs/data:/data:Z \
+                  --volume=/etc/ecs:/etc/ecs \
+                  --net=host \
+                  --env-file=/etc/ecs/ecs.config \
+                  amazon/amazon-ecs-agent:latest
+                ExecStop=/usr/bin/docker rm -f %i
+
+                [Install]
+                WantedBy=default.target
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          commands:
+            01_ecs_related:
+              command: |
+                echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf
+                sysctl -p /etc/sysctl.conf
+                iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+                iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
+                iptables-save > /etc/sysconfig/iptables
+            02_disable_docker_ecs:
+              command: |
+                systemctl disable docker
+                systemctl disable docker-container@ecs-agent.service
+            03_create_log_dir:
+              command: |
+                mkdir -p /var/log/ecs /var/lib/ecs/data
+            04_weekly_auto_update:
+              command: |
+                # Setup a cron job to run the ecs agent update script every week.
+                aws s3 cp s3://wa-biz-cfn-dev/scripts/update_ecs_agent.sh /opt/whatsapp/bin/update_ecs_agent.sh
+                chmod +x /opt/whatsapp/bin/update_ecs_agent.sh
+                crontab -l > /tmp/crontab_update_ecs.txt
+                echo '0 0 * * 0 /opt/whatsapp/bin/update_ecs_agent.sh' >> /tmp/crontab_update_ecs.txt
+                crontab /tmp/crontab_update_ecs.txt
+    Properties:
+      IamInstanceProfile: !Ref "EC2InstanceProfile"
+      ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMIID]
+      InstanceType: t2.medium
+      KeyName: !Ref "KeyName"
+      SecurityGroups: [!Ref "EcsSecurityGroup"]
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            DeleteOnTermination: "true"
+            VolumeSize: 50
+            VolumeType: "gp2"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          # Setup cfn-init, cfn-signal and cfn-hup script.
+          yum -y install epel-release
+          yum -y install python3
+          yum -y install python3-pip
+          pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+          cp -v /usr/local/init/redhat/cfn-hup /etc/init.d/cfn-hup
+          chmod +x /etc/init.d/cfn-hup
+
+          # Invoke DockerConfig configset to setup docker and ecs agent.
+          cfn-init -v --stack ${AWS::StackName} --resource ContainerInstances --configsets DockerConfig --region ${AWS::Region}
+          result=$(($result + $?))
+          echo "CFN-Init (DockerConfig) status: $result" >> /var/log/whatsapp.log
+
+          # Update ECS config file
+          ## Registers this EC2 instance in the particular ECS Cluster
+          echo "ECS_ENABLE_CONTAINER_METADATA=true" >> /etc/ecs/ecs.config
+          echo "ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=72h" >> /etc/ecs/ecs.config
+          sed -i.bak 's#ECS_CLUSTER=.*#ECS_CLUSTER=${ECSCluster}#g' /etc/ecs/ecs.config
+          systemctl enable docker-container@ecs-agent.service
+          systemctl start docker-container@ecs-agent.service
+          result=$(($result + $?))
+          echo "ECS agent service start status: $result" >> /var/log/whatsapp.log
+
+          cfn-signal -e $result --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
+          echo "Signalled CFN with status: $result" >> /var/log/whatsapp.log
+
+          echo "Successfully executed the script" >> /var/log/whatsapp.log
+
+  WAMonitoringService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ECSAutoScalingGroup
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      DesiredCount: "1"
+      LoadBalancers:
+        - ContainerName: grafana
+          ContainerPort: "3000"
+          LoadBalancerName: !Ref "WAMonitoringLB"
+      Role: !GetAtt ECSServiceRole.Arn
+      TaskDefinition: !Ref "WAMonitoringTaskDefinition"
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /whatsapp/
+
+  ECSSecretsManagerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECSSecretsManagerPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "ecr:GetAuthorizationToken"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "ssm:GetParameters"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "secretsmanager:GetSecretValue"
+            Resource: !Ref WAMonitoringSecret
+      Roles: [!Ref "ECSTaskExecutionRole"]
+
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs.amazonaws.com
+            Action:
+              ## sts: Simple Token Service
+              - "sts:AssumeRole"
+      Path: /whatsapp/
+
+  ECSServicePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECSServicePolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "elasticloadbalancing:Describe*"
+              - "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+              - "elasticloadbalancing:DeregisterTargets"
+              - "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+              - "elasticloadbalancing:RegisterTargets"
+              - "ec2:Describe*"
+              - "ec2:AuthorizeSecurityGroupIngress"
+            Resource: "*"
+      Roles: [!Ref "ECSServiceRole"]
+
+  # Set up EC2 IAM role and its policies
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      Path: /whatsapp/
+
+  ECSManagementPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECSManagementPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "ecs:DeregisterContainerInstance"
+              - "ecs:RegisterContainerInstance"
+              - "ecs:Submit*"
+            Resource: !GetAtt ECSCluster.Arn
+          - Effect: Allow
+            Action:
+              - "ecs:StartTelemetrySession"
+              - "ecs:Poll"
+            Resource: !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+          - Effect: Allow
+            Action:
+              - "ecs:DiscoverPollEndpoint"
+            Resource: "*"
+      Roles: [!Ref "EC2Role"]
+
+  LogPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LogPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "logs:DescribeLogStreams"
+            Resource: "arn:aws:logs:*:*:*"
+      Roles: [!Ref "EC2Role"]
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /whatsapp/
+      Roles:
+        - !Ref "EC2Role"
+
+Outputs:
+  GrafanaDashboardURL:
+    Description: Grafana Dashboard URL
+    Value: !Sub "http://${WAMonitoringLB.DNSName}:3000/d/whatsapp/biz-clients"
+  PrometheusTargetsURL:
+    Description: Prometheus Target URL
+    Value: !Sub "http://${WAMonitoringLB.DNSName}:9090/targets"
