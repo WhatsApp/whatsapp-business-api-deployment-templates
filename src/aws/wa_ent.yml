@@ -504,25 +504,25 @@ Mappings:
     sa-east-1: # São Paulo
       AMIID: ami-00000000
     ap-northeast-1: # Tokyo
-      AMIID: ami-045f38c93733dd48d
+      AMIID: ami-0ddea5e0f69c193a4
     ap-northeast-2: # Seoul
-      AMIID: ami-06cf2a72dadf92410
+      AMIID: ami-0e4214f08b51e23cc
     ap-southeast-1: # Singapore
-      AMIID: ami-0b4dd9d65556cac22
+      AMIID: ami-0adfdaea54d40922b
     ap-southeast-2: # Sydney
-      AMIID: ami-08bd00d7713a39e7d
+      AMIID: ami-03d56f451ca110e99
     eu-central-1: # Frankfurt
-      AMIID: ami-04cf43aca3e6f3de3
+      AMIID: ami-08b6d44b4f6f7b279
     eu-west-1: # Ireland
-      AMIID: ami-0ff760d16d9497662
+      AMIID: ami-04f5641b0d178a27a
     us-east-1: # N. Virginia
-      AMIID: ami-02eac2c0129f6376b
+      AMIID: ami-00e87074e52e6c9f9
     us-east-2: # Ohio
-      AMIID: ami-0f2b4fc905b0bd1f1
+      AMIID: ami-00f8e2c955f7ffa9b
     us-west-1: # N. California
-      AMIID: ami-074e2d6769f445be5
+      AMIID: ami-08d2d8b00f270d03b
     us-west-2: # Oregon
-      AMIID: ami-01ed306a12b7d1c96
+      AMIID: ami-0686851c4e7b1a8e1
 
 Resources:
   lambdaStack:
