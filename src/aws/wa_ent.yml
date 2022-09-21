@@ -2465,6 +2465,11 @@ Outputs:
     Value: !Ref LogRetentionDays
     Export:
       Name: !Sub "${AWS::StackName}-LogRetentionDays"
+  WALogGroup:
+    Description: Reference to the log group created
+    Value: !Ref 'WALogGroup'
+    Export:
+      Name: !Sub "${AWS::StackName}-WALogGroup"
   DBConnCA:
     Description: Value of DB Connection CA if configured
     Value: !If [IsDBConnCAConfigured, !Ref DBConnCA, "NA"]
