@@ -28,6 +28,7 @@ Metadata:
           - NetworkStackName
           - SubnetCount
           - LBScheme
+          - AllowedPrefixListIPv4
       - Label:
           default: "Container configuration"
         Parameters:
@@ -81,6 +82,8 @@ Metadata:
         default: "Number of subnets selected"
       LBScheme:
         default: "LoadBalancer scheme"
+      AllowedPrefixListIPv4:
+        default: "Select IPv4 prefix list to allow to connect"
       EBSVolumeSize:
         default: "EBS volume size"
       KeyName:
@@ -160,6 +163,10 @@ Parameters:
       - internal
       - internet-facing
     ConstraintDescription: Please choose a valid LoadBalancer scheme
+  AllowedPrefixListIPv4:
+    Type: String
+    Default: ''
+    Description: If left blank, certain ports on machines in public subnets will be globally accessible. Example value is pl-1234567890abcdefb
   MessageType:
     Description: Message type and size
     Type: String
@@ -337,6 +344,7 @@ Conditions:
   Has4Subnets: !Equals [!Ref SubnetCount, 4]
   Has5Subnets: !Equals [!Ref SubnetCount, 5]
   IsUnencrypted: !Equals [!Ref CryptoKeyForRestData, Unencrypted]
+  HasPrefixListIPv4: !Not [!Equals [!Ref AllowedPrefixListIPv4, '']]
   IsCreateNewKey: !Equals [!Ref CryptoKeyForRestData, Create-New-Key]
   IsUserProvidedKey: !Equals [!Ref CryptoKeyForRestData, User-Provided-Key]
   IsDBConnEncrypted: !Equals [!Ref EncryptDBConn, "enabled"]
@@ -609,7 +617,8 @@ Resources:
       IpProtocol: tcp
       FromPort: "443"
       ToPort: "443"
-      CidrIp: 0.0.0.0/0
+      CidrIp: !If [HasPrefixListIPv4, !Ref 'AWS::NoValue', 0.0.0.0/0]
+      SourcePrefixListId: !If [HasPrefixListIPv4, !Ref 'AllowedPrefixListIPv4', !Ref 'AWS::NoValue']
   EcsSecurityGroupSSHinbound:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -617,7 +626,8 @@ Resources:
       IpProtocol: tcp
       FromPort: "22"
       ToPort: "22"
-      CidrIp: 0.0.0.0/0
+      CidrIp: !If [HasPrefixListIPv4, !Ref 'AWS::NoValue', 0.0.0.0/0]
+      SourcePrefixListId: !If [HasPrefixListIPv4, !Ref 'AllowedPrefixListIPv4', !Ref 'AWS::NoValue']
   EcsSecurityGroupEWTraffic:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -633,7 +643,8 @@ Resources:
       IpProtocol: tcp
       FromPort: "8080"
       ToPort: "8080"
-      CidrIp: 0.0.0.0/0
+      CidrIp: !If [HasPrefixListIPv4, !Ref 'AWS::NoValue', 0.0.0.0/0]
+      SourcePrefixListId: !If [HasPrefixListIPv4, !Ref 'AllowedPrefixListIPv4', !Ref 'AWS::NoValue']
   EcsSecurityGroupNodeExporterinbound:
     Condition: IsHostExporterEnabled
     Type: AWS::EC2::SecurityGroupIngress
@@ -642,7 +653,8 @@ Resources:
       IpProtocol: tcp
       FromPort: "9100"
       ToPort: "9100"
-      CidrIp: 0.0.0.0/0
+      CidrIp: !If [HasPrefixListIPv4, !Ref 'AWS::NoValue', 0.0.0.0/0]
+      SourcePrefixListId: !If [HasPrefixListIPv4, !Ref 'AllowedPrefixListIPv4', !Ref 'AWS::NoValue']
   MountTargetSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
