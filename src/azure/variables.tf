@@ -47,7 +47,7 @@ variable "namespace" {
 }
 
 variable "api-version" {
-  default = "v2.41.1"
+  default = "v2.41.2"
 }
 
 variable "wabiz-web-username" {
@@ -82,8 +82,7 @@ variable "k8s-vm-class" {
   default = "Standard_D2s_v4"
 }
 
-# at least 2 for multi-connect
-
+# at least 2 for multi-connect required
 variable "map_web_server_count" {
   type = map(number)
   default = {
@@ -96,15 +95,11 @@ variable "map_web_server_count" {
     120 = 2
     160 = 2
     200 = 2
-    250 = 2
-    300 = 3
-    350 = 3
-    400 = 3
   }
 }
 
 variable "throughput" {
-  default = 10
+  default = 200
 }
 
 variable "map_shards_count" {
@@ -117,10 +112,6 @@ variable "map_shards_count" {
     120 = 32
     160 = 32
     200 = 32
-    250 = 32
-    300 = 32
-    350 = 32
-    400 = 32
   }
 }
 
@@ -134,13 +125,8 @@ variable "map_db_class" {
     120 = "Standard_E8as_v4"
     160 = "Standard_E8as_v4"
     200 = "Standard_E16as_v4"
-    250 = "Standard_E16as_v4"
-    300 = "Standard_F32s_v2"
-    350 = "Standard_F32s_v2"
-    400 = "Standard_F32s_v2"
   }
 }
-
 variable "map_db_iops" {
   type = map(string)
   default = {
@@ -150,11 +136,7 @@ variable "map_db_iops" {
     80  = 3500
     120 = 4000
     160 = 4500
-    200 = 5000
-    250 = 6000
-    300 = 7500
-    350 = 10000
-    400 = 12500
+    200 = 6000
   }
 }
 
@@ -164,18 +146,60 @@ variable "map_db_throughput" {
     10  = 20
     20  = 40
     40  = 60
-    80  = 100
-    120 = 120
+    80  = 80
+    120 = 100
     160 = 150
     200 = 180
-    250 = 210
-    300 = 240
-    350 = 270
-    400 = 300
   }
 }
 
-/* for single server, latency is too high, won't use them
+/* do NOT uncomment below code
+
+variable "map_db_buffer_pool_size" {
+  type = map(string)
+  default = {
+    10  = 1024 * 1024 * 1024 * 16 * 0.75
+    20  = 1024 * 1024 * 1024 * 16 * 0.75
+    40  = 1024 * 1024 * 1024 * 32 * 0.75
+    80  = 1024 * 1024 * 1024 * 32 * 0.75
+    120 = 1024 * 1024 * 1024 * 64 * 0.75
+    160 = 1024 * 1024 * 1024 * 64 * 0.75
+    200 = 1024 * 1024 * 1024 * 256 * 0.75
+    250 = 1024 * 1024 * 1024 * 256 * 0.75
+    300 = 1024 * 1024 * 1024 * 256 * 0.75
+  }
+}
+
+variable "map_db_buffer_pool_instances" {
+  type = map(string)
+  default = {
+    10  = 2
+    20  = 2
+    40  = 4
+    80  = 4
+    120 = 8
+    160 = 8
+    200 = 32
+    250 = 32
+    300 = 32
+  }
+}
+
+variable "map_db_query_cache_size" {
+  type = map(string)
+  default = {
+    10  = 1024 * 1024 * 1024 * 2
+    20  = 1024 * 1024 * 1024 * 2
+    40  = 1024 * 1024 * 1024 * 4
+    80  = 1024 * 1024 * 1024 * 4
+    120 = 1024 * 1024 * 1024 * 8
+    160 = 1024 * 1024 * 1024 * 8
+    200 = 1024 * 1024 * 1024 * 32
+    250 = 1024 * 1024 * 1024 * 32
+    300 = 1024 * 1024 * 1024 * 32
+  }
+}
+
 
 variable "map_db_size" {
   type = map(number)
@@ -208,4 +232,6 @@ variable "map_db_class" {
     200 = "GP_Gen5_4"
   }
 }
+
+
 */

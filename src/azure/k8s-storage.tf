@@ -15,7 +15,7 @@ resource "kubernetes_persistent_volume_claim" "media-share" {
     access_modes = ["ReadWriteMany"]
     resources {
       requests = {
-        storage = "1Gi"
+        storage = "100Gi"
       }
     }
 
@@ -27,13 +27,16 @@ resource "kubernetes_storage_class" "media-share" {
   metadata {
     name = "media-share"
   }
-  storage_provisioner = "kubernetes.io/azure-file"
+  # storage_provisioner = "kubernetes.io/azure-file"
+  storage_provisioner = "file.csi.azure.com"
   reclaim_policy      = "Retain"
   parameters = {
-    skuName  = "Standard_LRS"
+    protocol = "nfs"
+    skuName  = "Premium_LRS"
     location = var.location
   }
-  mount_options = ["file_mode=0400", "dir_mode=0600", "mfsymlinks", "uid=0", "gid=0", "cache=strict"]
+  #mount_options = ["file_mode=0666", "dir_mode=0777", "mfsymlinks", "uid=0", "gid=0", "cache=strict"] ///smb option only
+  mount_options = ["nconnect=8", "nfsvers=4.1", "rsize=1048576", "wsize=1048576", "hard", "actimeo=120", "timeo=600", "retrans=2"] ///nfs option only
 }
 
 

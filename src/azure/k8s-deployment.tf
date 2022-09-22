@@ -49,7 +49,7 @@ locals {
   db_sub_path                 = "mysql"
   db_config_mount_path        = "/etc/mysql"
   db_config_sub_path          = "etc/mysql"
-  media_mount_path            = "/usr/local/media"
+  media_mount_path            = "/usr/local/wamedia"
   media_vol                   = "media-vol"
   media_sub_path              = "waent/media"
   data_mount_path             = "/usr/local/waent/data"
