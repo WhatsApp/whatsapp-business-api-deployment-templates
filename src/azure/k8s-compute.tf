@@ -122,7 +122,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "coreapp" {
   scale_down_mode        = "Delete"
   spot_max_price         = -1
   ultra_ssd_enabled      = false
-  vm_size                = "Standard_F2s_v2"
+  vm_size                = var.map_coreapp_class[var.message_type][var.throughput]
   vnet_subnet_id         = azurerm_subnet.subnet-main.id
 
   tags = {

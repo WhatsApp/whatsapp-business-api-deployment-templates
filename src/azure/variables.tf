@@ -74,10 +74,7 @@ variable "mon-smtp-password" {
   default = "meta@meta!@#.com"
 }
 
-variable "db-iops" {
-  default = 1000
-}
-
+#use by k8s management pods
 variable "k8s-vm-class" {
   default = "Standard_D2s_v4"
 }
@@ -99,7 +96,13 @@ variable "map_web_server_count" {
 }
 
 variable "throughput" {
+  type = number
   default = 200
+
+  validation {
+    condition     = contains([10, 20, 40, 60, 80, 100, 120,160,200], var.throughput)
+    error_message = "Valid values var.throughput are: 10, 20, 40, 60, 80, 100, 120, 160, 200."
+  }
 }
 
 variable "map_shards_count" {
@@ -115,12 +118,95 @@ variable "map_shards_count" {
   }
 }
 
+variable "message_type" {
+  type = string
+  default = "video"
+
+  validation {
+    condition     = contains(["text", "audio", "video", "doc", "image1MB", "image2MB", "image4MB"], var.message_type)
+    error_message = "Valid values for var.messageType are: text, audio, video, doc, image1MB, image2MB, image4MB."
+  }
+}
+
+variable "map_coreapp_class" {
+
+  default = {
+    "text" = {
+      10  = "Standard_F2s_v2"
+      20  = "Standard_F2s_v2"
+      40  = "Standard_F2s_v2"
+      80  = "Standard_F2s_v2"
+      120 = "Standard_F2s_v2"
+      160 = "Standard_F2s_v2"
+      200 = "Standard_F2s_v2"
+    },
+    "video" = {
+      10  = "Standard_F2s_v2"
+      20  = "Standard_F2s_v2"
+      40  = "Standard_F2s_v2"
+      80  = "Standard_F2s_v2"
+      120 = "Standard_F2s_v2"
+      160 = "Standard_F2s_v2"
+      200 = "Standard_F2s_v2"
+    },
+    "audio" = {
+      10  = "Standard_F2s_v2"
+      20  = "Standard_F2s_v2"
+      40  = "Standard_F2s_v2"
+      80  = "Standard_F2s_v2"
+      120 = "Standard_F2s_v2"
+      160 = "Standard_F2s_v2"
+      200 = "Standard_F2s_v2"
+    },
+
+    "doc" = {
+      10  = "Standard_F2s_v2"
+      20  = "Standard_F2s_v2"
+      40  = "Standard_F2s_v2"
+      80  = "Standard_F2s_v2"
+      120 = "Standard_F2s_v2"
+      160 = "Standard_F2s_v2"
+      200 = "Standard_F2s_v2"
+    },
+
+    "image1MB" = {
+      10  = "Standard_F2s_v2"
+      20  = "Standard_F4s_v2"
+      40  = "Standard_F4s_v2"
+      80  = "Standard_F4s_v2"
+      120 = "Standard_F4s_v2"
+      160 = "Standard_F4s_v2"
+      200 = "Standard_F4s_v2"
+    },
+
+    "image2MB" = {
+      10  = "Standard_F8s_v2"
+      20  = "Standard_F8s_v2"
+      40  = "Standard_F8s_v2"
+      80  = "Standard_F8s_v2"
+      120 = "Standard_F8s_v2"
+      160 = "Standard_F8s_v2"
+      200 = "Standard_F16s_v2"
+    },
+
+    "image4MB" = {
+      10  = "Standard_F16s_v2"
+      20  = "Standard_F16s_v2"
+      40  = "Standard_F16s_v2"
+      80  = "Standard_F16s_v2"
+      120 = "Standard_F16s_v2"
+      160 = "Standard_F16s_v2"
+      200 = "Standard_F16s_v2"
+    },
+  }
+}
+
 variable "map_db_class" {
   type = map(string)
   default = {
     10  = "Standard_E2as_v4"
     20  = "Standard_E2as_v4"
-    40  = "Standard_E4as_v4"
+    40  = "Standard_E2as_v4"
     80  = "Standard_E4as_v4"
     120 = "Standard_E8as_v4"
     160 = "Standard_E8as_v4"
@@ -135,7 +221,7 @@ variable "map_db_iops" {
     40  = 2500
     80  = 3500
     120 = 4000
-    160 = 4500
+    160 = 5000
     200 = 6000
   }
 }
@@ -147,7 +233,7 @@ variable "map_db_throughput" {
     20  = 40
     40  = 60
     80  = 80
-    120 = 100
+    120 = 120
     160 = 150
     200 = 180
   }
@@ -199,7 +285,6 @@ variable "map_db_query_cache_size" {
     300 = 1024 * 1024 * 1024 * 32
   }
 }
-
 
 variable "map_db_size" {
   type = map(number)
