@@ -20,6 +20,7 @@ Metadata:
         Parameters:
           - EnvType
           - HAEnabled
+          - MessageType
           - EnvThroughput
           - HostExporterEnabled
       - Label:
@@ -31,7 +32,6 @@ Metadata:
       - Label:
           default: "Container configuration"
         Parameters:
-          - MessageType
           - EBSVolumeSize
           - KeyName
           - WAEntContRegistry
@@ -72,7 +72,7 @@ Metadata:
       MessageType:
         default: "Type of message"
       EnvThroughput:
-        default: "Required throughput"
+        default: "Desired throughput"
       HAEnabled:
         default: "High Availability"
       HostExporterEnabled:
@@ -142,7 +142,7 @@ Parameters:
     AllowedValues: [2]
   EnvThroughput:
     Type: Number
-    Description: Required throughput in number of messages per second
+    Description: Desired throughput in number of messages per second
     Default: 20
     AllowedValues: [20, 40, 80, 120, 160, 200, 250, 300, 350, 400]
   EnvType:
@@ -259,7 +259,7 @@ Parameters:
     Default: docker.whatsapp.biz
   WAEntContTag:
     Description: WhatsApp Enterprise client container's version (tag)
-    Default: v2.39.2
+    Default: v2.41.2
     Type: String
   ContainerLogDriver:
     Default: awslogs
@@ -496,6 +496,7 @@ Mappings:
       "350": "db.r5.8xlarge"
       "400": "db.r5.12xlarge"
   # AMI id with 00000000 suffix is invalid, which regions are unsupported.
+  # Image name: CentOS 7.9.2009 x86_64
   AWSRegionToAMI:
     ap-south-1: # Mumbai
       AMIID: ami-026f33d38b6410e30
