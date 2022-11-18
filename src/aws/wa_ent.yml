@@ -1,0 +1,2564 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+
+# WhatsApp Business API CFN Version 2.4.0
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AWS CloudFormation template to create WhatsApp Enterprise Client.
+  This template assumes network (VPC) resources are already created.
+  This template provides an option to create database (RDS) and EFS,
+  or piggyback on already created database and EFS resources.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "General configuration"
+        Parameters:
+          - HAEnabled
+          - EnvThroughput
+          - MessageType
+          - HostExporterEnabled
+      - Label:
+          default: "Network configuration"
+        Parameters:
+          - NetworkStackName
+          - SubnetCount
+          - LBScheme
+      - Label:
+          default: "Container configuration"
+        Parameters:
+          - EBSVolumeSize
+          - KeyName
+          - WAEntContRegistry
+          - WAEntContTag
+      - Label:
+          default: "Database configuration"
+        Parameters:
+          - ConfigOnDB
+          - DBHostname
+          - DBUser
+          - DBPassword
+          - DBPort
+          - PersistDBConn
+          - DBIdleConnectionTimeoutMS
+      - Label:
+          default: "Logging configuration"
+        Parameters:
+          - ContainerLogDriver
+          - ContainerLogMaxSize
+          - ContainerLogMaxFiles
+          - LogRetentionDays
+      - Label:
+          default: "Filesystem configuration (*UNUSED*)"
+        Parameters:
+          - EFSId
+      - Label:
+          default: "Security Configuration"
+        Parameters:
+          - CryptoKeyForRestData
+          - UserCryptoKeyId
+          - EncryptDBConn
+          - DBConnCA
+          - DBConnCert
+          - DBConnKey
+      - Label:
+          default: "WhatsApp Business API access point"
+        Parameters:
+          - WAWebUsername
+          - WAWebPassword
+      - Label:
+          default: "Grafana"
+        Parameters:
+          - GrafanaAdminPassword
+          - GrafanaEnableSmtp
+          - GrafanaSmtpHost
+          - GrafanaSmtpUser
+          - GrafanaSmtpPassword
+
+    ParameterLabels:
+      MessageType:
+        default: "Type of message"
+      EnvThroughput:
+        default: "Desired throughput"
+      HAEnabled:
+        default: "High Availability"
+      HostExporterEnabled:
+        default: "Host exporter for instance monitoring"
+      SubnetCount:
+        default: "Number of subnets selected"
+      LBScheme:
+        default: "LoadBalancer scheme"
+      EBSVolumeSize:
+        default: "EBS volume size"
+      KeyName:
+        default: "Select the key pair to use"
+      WAEntContRegistry:
+        default: "WhatsApp Enterprise container registry"
+      WAEntContTag:
+        default: "WhatsApp Enterprise client (container) version"
+      ConfigOnDB:
+        default: "Store configuration in database"
+      DBHostname:
+        default: "Enter 'existing' DB hostname"
+      DBUser:
+        default: "Administrator name"
+      DBPassword:
+        default: "Administrator password"
+      DBPort:
+        default: "Server port"
+      PersistDBConn:
+        default: "Persist DB connection"
+      DBIdleConnectionTimeoutMS:
+        default: "Timeout to close idle DB connections"
+      EFSId:
+        default: "Enter 'existing' EFS identifier"
+      CryptoKeyForRestData:
+        default: "Key to encrypt DB & EFS"
+      UserCryptoKeyId:
+        default: "User provided key id"
+      EncryptDBConn:
+        default: "DB connection encryption"
+      DBConnCA:
+        default: "CA certificate for DB connection"
+      DBConnCert:
+        default: "Client certificate for DB connection"
+      DBConnKey:
+        default: "Client key for DB connection"
+      ContainerLogDriver:
+        default: "Logging driver for container logs"
+      ContainerLogMaxSize:
+        default: "Maximum size of a container log file (in MB)"
+      ContainerLogMaxFiles:
+        default: "Maximum number of log files retained per container"
+      LogRetentionDays:
+        default: "Number of days to retain logs in CloudWatch"
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances
+  NetworkStackName:
+    Type: String
+    Default: waNet
+    Description: Name of the network stack
+  #This is a workaround as AWS CFN doesn't support list count function or iterator
+  SubnetCount:
+    Type: Number
+    Description: Choose number of subnets selected
+    Default: 2
+    AllowedValues: [2]
+  EnvThroughput:
+    Type: Number
+    Description: Desired throughput in number of messages per second. Meta DO NOT provide technical support to throughputs larger than officially support number (250MPS). Those throughputs are benchmarked internally, please use at your own discretion.
+    Default: 20
+    AllowedValues: [20, 40, 80, 120, 160, 200, 250, 300, 350]
+  LBScheme:
+    Description: LoadBalancer scheme. internet-facing (public) only
+    Type: String
+    Default: internet-facing
+    AllowedValues:
+      - internet-facing
+    ConstraintDescription: Please choose a valid LoadBalancer scheme
+  MessageType:
+    Description: Message type and size
+    Type: String
+    Default: "text"
+    AllowedValues:
+      - text
+      - image1MB
+      - image2MB
+      - image4MB
+      - video
+      - audio
+      - doc
+    ConstraintDescription: Please choose a valid message type
+  EBSVolumeSize:
+    Description: Size of the EBS volume attached to EC2 instance in GB
+    Type: Number
+    Default: 32
+    MinValue: 1
+    MaxValue: 16384
+    ConstraintDescription: must be a valid number between 1-16384
+  DBHostname:
+    Description: Existing DB hostname. Leave it blank to create DB (RDS) instance
+    Type: String
+    Default: ""
+  DBPort:
+    Description: Database port
+    Type: Number
+    Default: 3306
+    MinValue: 1025
+    MaxValue: 65535
+    ConstraintDescription: must be a valid number between 1025-65535
+  DBUser:
+    NoEcho: "true"
+    Description: The database admin account username
+    Type: String
+    Default: user123
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: "true"
+    Description: The database admin account password
+    Default: user123pwd
+    Type: String
+    MinLength: "8"
+    MaxLength: "41"
+    ConstraintDescription: must have at least 8 & at most 41 characters
+  DBIdleConnectionTimeoutMS:
+    Description: Timeout to close idle DB connections (in milliseconds)
+    Type: Number
+    Default: 180000
+    MinValue: 10000
+    MaxValue: 28800000
+    ConstraintDescription: must be a valid number between 10000-28800000
+  CryptoKeyForRestData:
+    Description: Please choose key type for DB & EFS persistent (at rest) data encryption
+    Type: String
+    Default: Default-Key
+    AllowedValues:
+      - Unencrypted
+      - Default-Key
+      - Create-New-Key
+      - User-Provided-Key
+  UserCryptoKeyId:
+    Description: Provide existing user provided key (CMK) id
+    Type: String
+    Default: ""
+  PersistDBConn:
+    Description: Persist Database connection for Web container
+    Default: enabled
+    Type: String
+    AllowedValues: [enabled, disabled]
+  EncryptDBConn:
+    Description: Database connection (data in transit) encryption
+    Default: enabled
+    Type: String
+    AllowedValues: [enabled, disabled]
+  DBConnCA:
+    Description: CA to verify database connection
+    Default: https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem
+    Type: String
+  DBConnCert:
+    Description: Client certificate for database connection
+    Default: ""
+    Type: String
+  DBConnKey:
+    Description: Client key for database connection
+    Default: ""
+    Type: String
+  EFSId:
+    Description: Existing EFS identity. Leave it blank to create EFS volume
+    Type: String
+    Default: ""
+  WAEntContRegistry:
+    Description: WhatsApp Enterprise container registry
+    Type: String
+    Default: docker.whatsapp.biz
+  WAEntContTag:
+    Description: WhatsApp Enterprise client container's version (tag)
+    Default: v2.41.3
+    Type: String
+  ContainerLogDriver:
+    Default: awslogs
+    Description: Logging driver for container logs
+    Type: String
+    AllowedValues: [awslogs, json-file]
+    ConstraintDescription: must select a valid value
+  ContainerLogMaxSize:
+    Default: "50"
+    Description: Maximum size of a container log file in MB before it's rotated
+    Type: Number
+    MinValue: "1"
+    MaxValue: "250"
+    ConstraintDescription: must be between 1 and 250 (MB)
+  ContainerLogMaxFiles:
+    Default: "7"
+    Description: Maximum number of log files to retain per container
+    Type: Number
+    MinValue: "1"
+    MaxValue: "30"
+    ConstraintDescription: must be between 1 and 30
+  LogRetentionDays:
+    Default: "7"
+    Description: Number of days to retain logs in CloudWatch
+    Type: Number
+    AllowedValues:
+      [
+        1,
+        3,
+        5,
+        7,
+        14,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+        365,
+        400,
+        545,
+        731,
+        1827,
+        3653,
+      ]
+    ConstraintDescription: must select a valid retention value
+  ConfigOnDB:
+    Default: true
+    Description: Enable configuration storage on database
+    Type: String
+    AllowedValues: [true, false]
+    ConstraintDescription: must select a valid value (true or false)
+  HAEnabled:
+    Default: enabled
+    Description: Enable High availability
+    Type: String
+    AllowedValues: [enabled]
+    ConstraintDescription: must select a valid value
+  HostExporterEnabled:
+    Default: enabled
+    Description: Export coreapp host stats for instance monitoring dashboard
+    Type: String
+    AllowedValues: [enabled, disabled]
+    ConstraintDescription: must select a valid value (enabled or disabled)
+  # Monitoring
+  WAWebUsername:
+    Description: "WhatsApp Business API Username"
+    Type: String
+    AllowedPattern: ".+"
+    ConstraintDescription: must not be blank.
+  WAWebPassword:
+    NoEcho: "true"
+    Description: "Password for WAWebUsername"
+    Type: String
+    AllowedPattern: ".+"
+    ConstraintDescription: must not be blank.
+  GrafanaAdminPassword:
+    NoEcho: "true"
+    Description: "You will use this as the login password for the Grafana dashboard when the stack is created"
+    Type: String
+    AllowedPattern: ".+"
+    ConstraintDescription: must not be blank.
+  GrafanaEnableSmtp:
+    Default: 0
+    Description: "Enable SMTP for setting up email alert. Value 0 means disable, and 1 means enable"
+    Type: Number
+    AllowedValues: [0, 1]
+  GrafanaSmtpHost:
+    Description: "SMTP host used in email alert, e,g, smtp.gmail.com:465"
+    Type: String
+  GrafanaSmtpUser:
+    Description: "SMTP user name used in email alert"
+    Type: String
+  GrafanaSmtpPassword:
+    NoEcho: "true"
+    Description: "SMTP password used in email alert"
+    Type: String
+
+Conditions:
+  CreateDBInstance: !Equals [!Ref DBHostname, ""]
+  ConfigOnDBEnabled: !Equals [!Ref ConfigOnDB, true]
+  CreateEFS: !Equals [!Ref EFSId, ""]
+  IsHA: !Equals [!Ref HAEnabled, "enabled"]
+  IsNotHA: !Equals [!Ref HAEnabled, "disabled"]
+  IsHostExporterEnabled: !Equals [!Ref HostExporterEnabled, "enabled"]
+  Has2Subnets: !Equals [!Ref SubnetCount, 2]
+  Has3Subnets: !Equals [!Ref SubnetCount, 3]
+  Has4Subnets: !Equals [!Ref SubnetCount, 4]
+  Has5Subnets: !Equals [!Ref SubnetCount, 5]
+  IsUnencrypted: !Equals [!Ref CryptoKeyForRestData, Unencrypted]
+  IsCreateNewKey: !Equals [!Ref CryptoKeyForRestData, Create-New-Key]
+  IsUserProvidedKey: !Equals [!Ref CryptoKeyForRestData, User-Provided-Key]
+  IsDBConnEncrypted: !Equals [!Ref EncryptDBConn, "enabled"]
+  IsAWSLogDriver: !Equals [!Ref ContainerLogDriver, "awslogs"]
+  IsDBConnCAConfigured:
+    !And [Condition: IsDBConnEncrypted, !Not [!Equals [!Ref DBConnCA, ""]]]
+  IsDBConnCertConfigured:
+    !And [Condition: IsDBConnEncrypted, !Not [!Equals [!Ref DBConnCert, ""]]]
+  IsDBConnKeyConfigured:
+    !And [Condition: IsDBConnEncrypted, !Not [!Equals [!Ref DBConnKey, ""]]]
+  IsDBConnPersisted: !Equals [!Ref PersistDBConn, "enabled"]
+
+  # Painful way to create conditions
+  CreateMountTarget2:
+    !Or [
+      Condition: Has2Subnets,
+      Condition: Has3Subnets,
+      Condition: Has4Subnets,
+      Condition: Has5Subnets,
+    ]
+  CreateMountTarget3:
+    !Or [Condition: Has3Subnets, Condition: Has4Subnets, Condition: Has5Subnets]
+  CreateMountTarget4: !Or [Condition: Has4Subnets, Condition: Has5Subnets]
+  CreateMountTarget5: !Equals [!Ref SubnetCount, 5]
+  CreateLBListenerForHostExporterPorts:
+    !And [Condition: IsNotHA, Condition: IsHostExporterEnabled]
+  InternalLB: !Equals [!Ref LBScheme, "internal"]
+
+Mappings:
+  Constants:
+    Values:
+      DesiredCapacity: 1
+      MinSize: 1
+      MaxSize: 2
+      MountPoint: /mnt/wa
+      EC2Principal: ec2.amazonaws.com
+      ARNPrefix: "arn:aws:"
+      HiMemoryUtilPercent: 85
+      LoMemoryUtilPercent: 30
+      HiPendingJobs: 2000
+      LoPendingJobs: 500
+  MessageTypeMapToInstanceType:
+    text:
+      "10": "c5.large"
+      "20": "c5.large"
+      "40": "c5.large"
+      "80": "c5.large"
+      "120": "c5.large"
+      "160": "c5.large"
+      "200": "c5.large"
+      "250": "c5.large"
+      "300": "c5.large"
+      "350": "c5.large"
+    image1MB:
+      "10": "c5.xlarge"
+      "20": "c5.xlarge"
+      "40": "c5.xlarge"
+      "80": "c5.xlarge"
+      "120": "c5.xlarge"
+      "160": "c5.xlarge"
+      "200": "c5.xlarge"
+      "250": "c5.xlarge"
+      "300": "c5.2xlarge"
+      "350": "c5.2xlarge"
+    image2MB:
+      "10": "c5.2xlarge"
+      "20": "c5.4xlarge"
+      "40": "c5.4xlarge"
+      "80": "c5.4xlarge"
+      "120": "c5.4xlarge"
+      "160": "c5.4xlarge"
+      "200": "c5.4xlarge"
+      "250": "c5.4xlarge"
+      "300": "c5.4xlarge"
+      "350": "c5.4xlarge"
+    image4MB:
+      "10": "c5.4xlarge"
+      "20": "c5.4xlarge"
+      "40": "c5.4xlarge"
+      "80": "c5.4xlarge"
+      "120": "c5.4xlarge"
+      "160": "c5.4xlarge"
+      "200": "c5.4xlarge"
+      "250": "c5.4xlarge"
+      "300": "c5.4xlarge"
+      "350": "c5.4xlarge"
+    video:
+      "10": "c5.large"
+      "20": "c5.large"
+      "40": "c5.large"
+      "80": "c5.large"
+      "120": "c5.large"
+      "160": "c5.large"
+      "200": "c5.large"
+      "250": "c5.large"
+      "300": "c5.large"
+      "350": "c5.large"
+    audio:
+      "10": "c5.large"
+      "20": "c5.large"
+      "40": "c5.large"
+      "80": "c5.large"
+      "120": "c5.large"
+      "160": "c5.large"
+      "200": "c5.large"
+      "250": "c5.large"
+      "300": "c5.large"
+      "350": "c5.large"
+    doc:
+      "10": "c5.large"
+      "20": "c5.large"
+      "40": "c5.large"
+      "80": "c5.large"
+      "120": "c5.large"
+      "160": "c5.large"
+      "200": "c5.large"
+      "250": "c5.large"
+      "300": "c5.large"
+      "350": "c5.large"
+  EnvConfig:
+    ThroughputMapToShards:
+      "10": 2
+      "20": 2
+      "40": 4
+      "80": 8
+      "120": 16
+      "160": 16
+      "200": 32
+      "250": 32
+      "300": 32
+      "350": 32
+    ThroughputMapToWebApps:
+      "10": 2
+      "20": 2
+      "40": 2
+      "80": 2
+      "120": 2
+      "160": 2
+      "200": 2
+      "250": 3
+      "300": 3
+      "350": 3
+    NumCoreappInstances:
+      "2": 3
+      "4": 5
+      "8": 9
+      "16": 17
+      "32": 33
+    DBInstanceClass:
+      "10": "db.r5.large"
+      "20": "db.r5.xlarge"
+      "40": "db.r5.xlarge"
+      "80": "db.r5.2xlarge"
+      "120": "db.r5.4xlarge"
+      "160": "db.r5.4xlarge"
+      "200": "db.r5.4xlarge"
+      "250": "db.r5.8xlarge"
+      "300": "db.r5.8xlarge"
+      "350": "db.r5.8xlarge"
+  # AMI id with 00000000 suffix is invalid, which regions are unsupported.
+  AWSRegionToAMI:
+    ap-south-1: # Mumbai
+      AMIID: ami-026f33d38b6410e30
+    eu-west-2: # London
+      AMIID: ami-00000000
+    sa-east-1: # São Paulo
+      AMIID: ami-00000000
+    ap-northeast-1: # Tokyo
+      AMIID: ami-0ddea5e0f69c193a4
+    ap-northeast-2: # Seoul
+      AMIID: ami-0e4214f08b51e23cc
+    ap-southeast-1: # Singapore
+      AMIID: ami-0adfdaea54d40922b
+    ap-southeast-2: # Sydney
+      AMIID: ami-03d56f451ca110e99
+    eu-central-1: # Frankfurt
+      AMIID: ami-08b6d44b4f6f7b279
+    eu-west-1: # Ireland
+      AMIID: ami-04f5641b0d178a27a
+    us-east-1: # N. Virginia
+      AMIID: ami-00e87074e52e6c9f9
+    us-east-2: # Ohio
+      AMIID: ami-00f8e2c955f7ffa9b
+    us-west-1: # N. California
+      AMIID: ami-08d2d8b00f270d03b
+    us-west-2: # Oregon
+      AMIID: ami-0686851c4e7b1a8e1
+
+Resources:
+  lambdaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: "https://wa-biz-cfn.s3.us-west-2.amazonaws.com/wa_ent_lambda.yml"
+      Parameters:
+        LogRetentionDays: !Ref LogRetentionDays
+
+  KMSKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub "key-${AWS::StackName}"
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Join ["", ["arn:aws:iam::", !Ref "AWS::AccountId", ":root"]]
+            Action: "kms:*"
+            Resource: "*"
+
+  #"ms" stands for monStack, short name is used to avoid hitting the LB name length limitation error
+  ms:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: "<Replace with your own S3 object URL>"
+      Parameters:
+        WAEntLB: !Join ["", [!GetAtt [WAEntLB, DNSName]]]
+        DBHostname:
+          !If [
+            CreateDBInstance,
+            !GetAtt dbStack.Outputs.DBHostname,
+            !Ref DBHostname,
+          ]
+        DBPort:
+          !If [CreateDBInstance, !GetAtt dbStack.Outputs.DBPort, !Ref DBPort]
+        KeyName: !Ref KeyName
+        VpcId:
+          Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+        DeploymentSubnet:
+          Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1"
+        LBScheme: !Ref LBScheme
+        LBSubnet:
+          Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1"
+        WAEntContRegistry: !Ref WAEntContRegistry
+        WAEntContTag: !Ref WAEntContTag
+        DBUser: !Ref DBUser
+        DBPassword: !Ref DBPassword
+        WAWebUsername: !Ref WAWebUsername
+        WAWebPassword: !Ref WAWebPassword
+        GrafanaAdminPassword: !Ref GrafanaAdminPassword
+        GrafanaEnableSmtp: !Ref GrafanaEnableSmtp
+        GrafanaSmtpHost: !Ref GrafanaSmtpHost
+        GrafanaSmtpUser: !Ref GrafanaSmtpUser
+        GrafanaSmtpPassword: !Ref GrafanaSmtpPassword
+    DependsOn: [WAEntLB, dbStack]
+
+  dbStack:
+    Condition: CreateDBInstance
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: "<Replace with your own S3 object URL>"
+      Parameters:
+        VpcId:
+          Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+        SubnetIDs:
+          !Join [
+            ",",
+            [
+              Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+              Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+            ],
+          ]
+        DBUser: !Ref DBUser
+        DBPassword: !Ref DBPassword
+        DBPort: !Ref DBPort
+        DBInstanceClass:
+          !FindInMap [EnvConfig, DBInstanceClass, !Ref EnvThroughput]
+        DBEncryptionKeyType:
+          !If [IsCreateNewKey, "User-Provided-Key", !Ref CryptoKeyForRestData]
+        EncryptionKeyId:
+          !If [
+            IsUserProvidedKey,
+            !Ref UserCryptoKeyId,
+            !If [IsCreateNewKey, !Ref KMSKey, ""],
+          ]
+
+  StorePassword:
+    Type: Custom::StoreDBPassword
+    Properties:
+      ServiceToken: !GetAtt lambdaStack.Outputs.StoreParameterLambdaArn
+      crypto-arn: !GetAtt KMSKey.Arn
+      key: !Sub "${AWS::StackName}-WA_DB_PASSWORD"
+      value: !Ref DBPassword
+
+  StoreHostName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "${AWS::StackName}-WA_DB_HOSTNAME"
+      Type: String
+      Value:
+        !If [
+          CreateDBInstance,
+          !GetAtt dbStack.Outputs.DBHostname,
+          !Ref DBHostname,
+        ]
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS Security Group
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+  EcsSecurityGroupHTTPSinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "443"
+      ToPort: "443"
+      CidrIp: 0.0.0.0/0
+  EcsSecurityGroupSSHinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "22"
+      ToPort: "22"
+      CidrIp: 0.0.0.0/0
+  EcsSecurityGroupEWTraffic:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: East West traffic among containers
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref "EcsSecurityGroup"
+  EcsSecurityGroupCadvisorinbound:
+    Condition: IsHostExporterEnabled
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "8080"
+      ToPort: "8080"
+      CidrIp: 0.0.0.0/0
+  EcsSecurityGroupNodeExporterinbound:
+    Condition: IsHostExporterEnabled
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref "EcsSecurityGroup"
+      IpProtocol: tcp
+      FromPort: "9100"
+      ToPort: "9100"
+      CidrIp: 0.0.0.0/0
+  MountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for mount target
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "2049"
+          ToPort: "2049"
+          SourceSecurityGroupId: !Ref "EcsSecurityGroup"
+
+  FileSystem:
+    Condition: CreateEFS
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: !If [IsUnencrypted, False, True]
+      KmsKeyId:
+        !If [
+          IsCreateNewKey,
+          !Ref KMSKey,
+          !If [IsUserProvidedKey, !Ref UserCryptoKeyId, !Ref "AWS::NoValue"],
+        ]
+      PerformanceMode: generalPurpose
+      FileSystemTags:
+        - Key: Name
+          Value: wa-ent-vol
+  MountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !If [CreateEFS, !Ref FileSystem, !Ref EFSId]
+      SubnetId:
+        !Select [
+          "0",
+          [
+            Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+            Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+          ],
+        ]
+      SecurityGroups: [!Ref MountTargetSecurityGroup]
+  MountTarget2:
+    Condition: CreateMountTarget2
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !If [CreateEFS, !Ref FileSystem, !Ref EFSId]
+      SubnetId:
+        !Select [
+          "1",
+          [
+            Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+            Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+          ],
+        ]
+      SecurityGroups: [!Ref MountTargetSecurityGroup]
+
+  WALogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      RetentionInDays: !Ref LogRetentionDays
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+
+  WAEntTaskdefinition:
+    Condition: IsNotHA
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - StoreHostName
+    Properties:
+      ExecutionRoleArn: !GetAtt ECSTaskExecRole.Arn
+      Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
+      ContainerDefinitions:
+        - Name: wa-coreapp
+          Image:
+            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
+          MemoryReservation: "1024"
+          MountPoints:
+            - ContainerPath: /usr/local/waent/data
+              SourceVolume: data-vol
+            - ContainerPath: /usr/local/wamedia
+              SourceVolume: media-vol
+            - ContainerPath: /opt/certs
+              SourceVolume: cert-vol
+          Environment:
+            - Name: WA_RUNNING_ENV
+              Value: "AWS"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_STACK_NAME
+              Value: !Ref AWS::StackName
+            - Name: WA_DB_ENGINE
+              Value: MYSQL
+            - Name: WA_DB_PORT
+              Value:
+                !If [
+                  CreateDBInstance,
+                  !GetAtt dbStack.Outputs.DBPort,
+                  !Ref DBPort,
+                ]
+            - Name: WA_DB_USERNAME
+              Value: !Ref DBUser
+            - Name: WA_CONFIG_ON_DB
+              Value: !If [ConfigOnDBEnabled, 1, 0]
+            - Name: WA_DB_SSL_CA
+              Value: !If [IsDBConnCAConfigured, "/opt/certs/db-ca.pem", ""]
+            - Name: WA_DB_SSL_CERT
+              Value: !If [IsDBConnCertConfigured, "/opt/certs/db-cert.pem", ""]
+            - Name: WA_DB_SSL_KEY
+              Value: !If [IsDBConnKeyConfigured, "/opt/certs/db-key.pem", ""]
+            - Name: WA_DB_CONNECTION_IDLE_TIMEOUT
+              Value: !Ref DBIdleConnectionTimeoutMS
+          Secrets:
+            - Name: WA_DB_HOSTNAME
+              ValueFrom: !Ref StoreHostName
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "coreapp", !Ref "AWS::NoValue"]
+        - Name: wa-web
+          Image:
+            !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag]]
+          MemoryReservation: "512"
+          VolumesFrom:
+            - SourceContainer: wa-coreapp
+          PortMappings:
+            - ContainerPort: 443
+              HostPort: 443
+          Environment:
+            - Name: WA_RUNNING_ENV
+              Value: "AWS"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_STACK_NAME
+              Value: !Ref AWS::StackName
+            - Name: WA_DB_ENGINE
+              Value: MYSQL
+            - Name: WA_DB_PORT
+              Value:
+                !If [
+                  CreateDBInstance,
+                  !GetAtt dbStack.Outputs.DBPort,
+                  !Ref DBPort,
+                ]
+            - Name: WA_DB_USERNAME
+              Value: !Ref DBUser
+            - Name: WA_CONFIG_ON_DB
+              Value: !If [ConfigOnDBEnabled, 1, 0]
+            - Name: WACORE_HOSTNAME
+              Value: wa-coreapp
+            - Name: WA_WEB_SERVERNAME
+              Value: !Join ["", [!GetAtt [WAEntLB, DNSName]]]
+            - Name: WA_DB_SSL_CA
+              Value: !If [IsDBConnCAConfigured, "/opt/certs/db-ca.pem", ""]
+            - Name: WA_DB_SSL_CERT
+              Value: !If [IsDBConnCertConfigured, "/opt/certs/db-cert.pem", ""]
+            - Name: WA_DB_SSL_KEY
+              Value: !If [IsDBConnKeyConfigured, "/opt/certs/db-key.pem", ""]
+            - Name: WA_DB_PERSISTENT
+              Value: !If [IsDBConnPersisted, 1, 0]
+          Secrets:
+            - Name: WA_DB_HOSTNAME
+              ValueFrom: !Ref StoreHostName
+          Links: ["wa-coreapp"]
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "web", !Ref "AWS::NoValue"]
+      Volumes:
+        - Name: data-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/data
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: media-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/media
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: cert-vol
+          Host:
+            SourcePath: /opt/certs
+
+  WAEntHAWebTaskdefinition:
+    Condition: IsHA
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - StoreHostName
+    Properties:
+      ExecutionRoleArn: !GetAtt ECSTaskExecRole.Arn
+      Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
+      ContainerDefinitions:
+        - Name: wa-web
+          Image:
+            !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag]]
+          MemoryReservation: "512"
+          PortMappings:
+            - ContainerPort: 443
+              HostPort: 443
+          MountPoints:
+            - ContainerPath: /usr/local/waent/data
+              SourceVolume: data-vol
+            - ContainerPath: /usr/local/wamedia
+              SourceVolume: media-vol
+            - ContainerPath: /opt/certs
+              SourceVolume: cert-vol
+          Environment:
+            - Name: WA_APP_MULTICONNECT
+              Value: 1
+            - Name: WA_RUNNING_ENV
+              Value: "AWS"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_STACK_NAME
+              Value: !Ref AWS::StackName
+            - Name: WA_DB_ENGINE
+              Value: MYSQL
+            - Name: WA_DB_PORT
+              Value:
+                !If [
+                  CreateDBInstance,
+                  !GetAtt dbStack.Outputs.DBPort,
+                  !Ref DBPort,
+                ]
+            - Name: WA_DB_USERNAME
+              Value: !Ref DBUser
+            - Name: WA_CONFIG_ON_DB
+              Value: !If [ConfigOnDBEnabled, 1, 0]
+            - Name: WA_WEB_SERVERNAME
+              Value: !Join ["", [!GetAtt [WAEntLB, DNSName]]]
+            - Name: WA_DB_SSL_CA
+              Value: !If [IsDBConnCAConfigured, "/opt/certs/db-ca.pem", ""]
+            - Name: WA_DB_SSL_CERT
+              Value: !If [IsDBConnCertConfigured, "/opt/certs/db-cert.pem", ""]
+            - Name: WA_DB_SSL_KEY
+              Value: !If [IsDBConnKeyConfigured, "/opt/certs/db-key.pem", ""]
+            - Name: WA_DB_PERSISTENT
+              Value: !If [IsDBConnPersisted, 1, 0]
+          Secrets:
+            - Name: WA_DB_HOSTNAME
+              ValueFrom: !Ref StoreHostName
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "web", !Ref "AWS::NoValue"]
+      Volumes:
+        - Name: data-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/data
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: media-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/media
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: cert-vol
+          Host:
+            SourcePath: /opt/certs
+
+  WAEntHAMasterTaskdefinition:
+    Condition: IsHA
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - StoreHostName
+    Properties:
+      ExecutionRoleArn: !GetAtt ECSTaskExecRole.Arn
+      Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
+      ContainerDefinitions:
+        - Name: wa-master
+          Image:
+            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
+          MemoryReservation: "1024"
+          PortMappings:
+            - ContainerPort: 6250
+            - ContainerPort: 6251
+            - ContainerPort: 6252
+            - ContainerPort: 6253
+          MountPoints:
+            - ContainerPath: /usr/local/waent/data
+              SourceVolume: data-vol
+            - ContainerPath: /usr/local/wamedia
+              SourceVolume: media-vol
+            - ContainerPath: /opt/certs
+              SourceVolume: cert-vol
+          Environment:
+            - Name: WA_RUNNING_ENV
+              Value: "AWS"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_STACK_NAME
+              Value: !Ref AWS::StackName
+            - Name: WA_MASTER_NODE
+              Value: 1
+            - Name: WA_APP_MULTICONNECT
+              Value: 1
+            - Name: WA_DB_ENGINE
+              Value: MYSQL
+            - Name: WA_DB_PORT
+              Value:
+                !If [
+                  CreateDBInstance,
+                  !GetAtt dbStack.Outputs.DBPort,
+                  !Ref DBPort,
+                ]
+            - Name: WA_DB_USERNAME
+              Value: !Ref DBUser
+            - Name: WA_CONFIG_ON_DB
+              Value: !If [ConfigOnDBEnabled, 1, 0]
+            - Name: WA_DB_SSL_CA
+              Value: !If [IsDBConnCAConfigured, "/opt/certs/db-ca.pem", ""]
+            - Name: WA_DB_SSL_CERT
+              Value: !If [IsDBConnCertConfigured, "/opt/certs/db-cert.pem", ""]
+            - Name: WA_DB_SSL_KEY
+              Value: !If [IsDBConnKeyConfigured, "/opt/certs/db-key.pem", ""]
+            - Name: WA_DB_CONNECTION_IDLE_TIMEOUT
+              Value: !Ref DBIdleConnectionTimeoutMS
+          Secrets:
+            - Name: WA_DB_HOSTNAME
+              ValueFrom: !Ref StoreHostName
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "master", !Ref "AWS::NoValue"]
+      Volumes:
+        - Name: data-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/data
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: media-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/media
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: cert-vol
+          Host:
+            SourcePath: /opt/certs
+
+  WAEntHACoreappTaskdefinition:
+    Condition: IsHA
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - StoreHostName
+    Properties:
+      ExecutionRoleArn: !GetAtt ECSTaskExecRole.Arn
+      Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
+      ContainerDefinitions:
+        - Name: wa-coreapp
+          Image:
+            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
+          MemoryReservation: "1024"
+          PortMappings:
+            - ContainerPort: 6250
+            - ContainerPort: 6251
+            - ContainerPort: 6252
+            - ContainerPort: 6253
+          MountPoints:
+            - ContainerPath: /usr/local/waent/data
+              SourceVolume: data-vol
+            - ContainerPath: /usr/local/wamedia
+              SourceVolume: media-vol
+            - ContainerPath: /opt/certs
+              SourceVolume: cert-vol
+          Environment:
+            - Name: WA_RUNNING_ENV
+              Value: "AWS"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_STACK_NAME
+              Value: !Ref AWS::StackName
+            - Name: WA_APP_MULTICONNECT
+              Value: 1
+            - Name: WA_DB_ENGINE
+              Value: MYSQL
+            - Name: WA_DB_PORT
+              Value:
+                !If [
+                  CreateDBInstance,
+                  !GetAtt dbStack.Outputs.DBPort,
+                  !Ref DBPort,
+                ]
+            - Name: WA_DB_USERNAME
+              Value: !Ref DBUser
+            - Name: WA_CONFIG_ON_DB
+              Value: !If [ConfigOnDBEnabled, 1, 0]
+            - Name: WA_DB_SSL_CA
+              Value: !If [IsDBConnCAConfigured, "/opt/certs/db-ca.pem", ""]
+            - Name: WA_DB_SSL_CERT
+              Value: !If [IsDBConnCertConfigured, "/opt/certs/db-cert.pem", ""]
+            - Name: WA_DB_SSL_KEY
+              Value: !If [IsDBConnKeyConfigured, "/opt/certs/db-key.pem", ""]
+            - Name: WA_DB_CONNECTION_IDLE_TIMEOUT
+              Value: !Ref DBIdleConnectionTimeoutMS
+          Secrets:
+            - Name: WA_DB_HOSTNAME
+              ValueFrom: !Ref StoreHostName
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "coreapp", !Ref "AWS::NoValue"]
+      Volumes:
+        - Name: data-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/data
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: media-vol
+          Host:
+            SourcePath: !Sub
+              - ${MntPoint}/media
+              - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        - Name: cert-vol
+          Host:
+            SourcePath: /opt/certs
+
+  WAEntLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Join ["", [!Ref "AWS::StackName", "-LB"]]
+      Scheme: !Ref "LBScheme"
+      Type: network
+      # LoadBalancer subnet(s) to be as the same as subnet of webapp
+      Subnets:
+        [
+          Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+          Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+        ]
+
+  WAEntLBListner:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref WAEntTargetGroup
+      LoadBalancerArn: !Ref WAEntLB
+      Port: 443
+      Protocol: TCP
+
+  WAEntTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 443
+      HealthCheckProtocol: HTTPS
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      IpAddressType: ipv4
+      Name: !Join ["", [!Ref "AWS::StackName", "-TG"]]
+      Port: 443
+      Protocol: TCP
+      TargetType: instance
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+
+  WAEntLBListnerExport8080:
+    Condition: CreateLBListenerForHostExporterPorts
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref WAEntTargetGroupExport8080
+      LoadBalancerArn: !Ref WAEntLB
+      Port: 8080
+      Protocol: TCP
+
+  WAEntTargetGroupExport8080:
+    Condition: CreateLBListenerForHostExporterPorts
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 8080
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      IpAddressType: ipv4
+      Name: !Join ["", [!Ref "AWS::StackName", "-TG-Export8080"]]
+      Port: 8080
+      Protocol: TCP
+      TargetType: instance
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+
+  WAEntLBListnerExport9100:
+    Condition: CreateLBListenerForHostExporterPorts
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref WAEntTargetGroupExport9100
+      LoadBalancerArn: !Ref WAEntLB
+      Port: 9100
+      Protocol: TCP
+
+  WAEntTargetGroupExport9100:
+    Condition: CreateLBListenerForHostExporterPorts
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 9100
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      IpAddressType: ipv4
+      Name: !Join ["", [!Ref "AWS::StackName", "-TG-Export9100"]]
+      Port: 9100
+      Protocol: TCP
+      TargetType: instance
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPC"
+
+  # AutoScalingGroup when HA mode is enabled.
+  HAECSAutoScalingGroup:
+    Condition: IsHA
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        [
+          !Select [
+            "0",
+            [
+              Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+              Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+            ],
+          ],
+        ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref "ContainerInstances"
+        Version: !GetAtt ContainerInstances.LatestVersionNumber
+      MinSize:
+        !FindInMap [
+          EnvConfig,
+          NumCoreappInstances,
+          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        ]
+      MaxSize:
+        !FindInMap [
+          EnvConfig,
+          NumCoreappInstances,
+          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        ]
+      DesiredCapacity:
+        !FindInMap [
+          EnvConfig,
+          NumCoreappInstances,
+          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        ]
+      TargetGroupARNs: [!Ref WAEntTargetGroup]
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: "true"
+
+  HAECSAutoScalingGroupWeb:
+    Condition: IsHA
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        [
+          !Select [
+            "1",
+            [
+              Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+              Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+            ],
+          ],
+        ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref "WebContainerInstances"
+        Version: !GetAtt WebContainerInstances.LatestVersionNumber
+      MinSize:
+        !FindInMap [EnvConfig, ThroughputMapToWebApps, !Ref "EnvThroughput"]
+      MaxSize:
+        !FindInMap [EnvConfig, ThroughputMapToWebApps, !Ref "EnvThroughput"]
+      DesiredCapacity:
+        !FindInMap [EnvConfig, ThroughputMapToWebApps, !Ref "EnvThroughput"]
+      TargetGroupARNs: [!Ref WAEntTargetGroup]
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: "true"
+
+  # AutoScalingGroup when HA mode is disabled.
+  SingleECSAutoScalingGroup:
+    Condition: IsNotHA
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        [
+          Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+          Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+        ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref "ContainerInstances"
+        Version: !GetAtt ContainerInstances.LatestVersionNumber
+      MinSize: !FindInMap [Constants, Values, MinSize]
+      MaxSize: !FindInMap [Constants, Values, MaxSize]
+      DesiredCapacity: !FindInMap [Constants, Values, DesiredCapacity]
+      TargetGroupARNs:
+        !If [
+          CreateLBListenerForHostExporterPorts,
+          [!Ref WAEntTargetGroup],
+          [
+            !Ref WAEntTargetGroup,
+            !Ref WAEntTargetGroupExport8080,
+            !Ref WAEntTargetGroupExport9100,
+          ],
+        ]
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: "true"
+
+  ContainerInstances:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          DockerConfig:
+            - pkg_install
+            - ecs_agent_setup
+          MountConfig:
+            - mnt_setup
+            - mnt_execute
+          LogsConfig:
+            - log_setup
+        pkg_install:
+          commands:
+            01_update_and_prepare:
+              command: |
+                yum update -y
+                yum install -y wget yum-utils
+                yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                yum makecache fast
+            02_pkg_install:
+              command: |
+                yum install -y docker-ce mysql
+                yum install -y epel-release
+                yum install -y python-boto3
+                pip3 install awscli
+        ecs_agent_setup:
+          files:
+            /etc/ecs/ecs.config:
+              content: |
+                ECS_DATADIR=/data
+                ECS_ENABLE_TASK_IAM_ROLE=true
+                ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true
+                ECS_LOGFILE=/log/ecs-agent.log
+                ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs"]
+                ECS_LOGLEVEL=info
+                ECS_CLUSTER=default
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/systemd/system/docker-container@ecs-agent.service:
+              content: |
+                [Unit]
+                Description=Docker Container %I
+                Requires=docker.service
+                After=docker.service
+
+                [Service]
+                Restart=always
+                ExecStart=/usr/bin/docker run --name %i \
+                  --privileged \
+                  --restart=on-failure:10 \
+                  --volume=/var/run:/var/run \
+                  --volume=/var/log/ecs/:/log:Z \
+                  --volume=/var/lib/ecs/data:/data:Z \
+                  --volume=/etc/ecs:/etc/ecs \
+                  --net=host \
+                  --env-file=/etc/ecs/ecs.config \
+                  amazon/amazon-ecs-agent:latest
+                ExecStop=/usr/bin/docker rm -f %i
+
+                [Install]
+                WantedBy=default.target
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          commands:
+            01_ecs_related:
+              command: |
+                echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf
+                sysctl -p /etc/sysctl.conf
+                iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+                iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
+                iptables-save > /etc/sysconfig/iptables
+            02_disable_docker_ecs:
+              command: |
+                systemctl disable docker
+                systemctl disable docker-container@ecs-agent.service
+            03_create_log_dir:
+              command: |
+                mkdir -p /var/log/ecs /var/lib/ecs/data
+            04_weekly_auto_update:
+              command: |
+                # Setup a cron job to run the ecs agent update script every week.
+                aws s3 cp s3://wa-biz-cfn/scripts/update_ecs_agent.sh /opt/whatsapp/bin/update_ecs_agent.sh
+                chmod +x /opt/whatsapp/bin/update_ecs_agent.sh
+                crontab -l > /tmp/crontab_update_ecs.txt
+                echo '0 0 * * 0 /opt/whatsapp/bin/update_ecs_agent.sh' >> /tmp/crontab_update_ecs.txt
+                crontab /tmp/crontab_update_ecs.txt
+        mnt_setup:
+          packages:
+            yum:
+              nfs-utils: []
+          commands:
+            01_createdir:
+              command: !Sub
+                - mkdir -p ${MntPoint}
+                - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        mnt_execute:
+          commands:
+            01_mount:
+              command: !Sub
+                - |
+                  mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${EFSName}.efs.${AWS::Region}.amazonaws.com:/ ${MntPoint}
+                  echo "${EFSName}.efs.${AWS::Region}.amazonaws.com:/ ${MntPoint} nfs4  nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2  0 0" >> /etc/fstab
+
+                  echo "Mount status: $?" >> /var/log/whatsapp.log
+                  if [ $? -ne 0 ]; then
+                    exit $?
+                  fi
+                - {
+                    MntPoint: !FindInMap [Constants, Values, MountPoint],
+                    EFSName: !If [CreateEFS, !Ref FileSystem, !Ref EFSId],
+                  }
+            02_subdirs:
+              command: !Sub
+                - cd ${MntPoint} && mkdir -p data media
+                - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+            03_permissions:
+              command: !Sub
+                - chown centos:centos ${MntPoint}/data ${MntPoint}/media
+                - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        log_setup:
+          files:
+            /tmp/awslogs-agent-setup.py:
+              source: https://s3.amazonaws.com//aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
+              mode: "000555"
+              owner: root
+              group: root
+          commands:
+            01_create_state_directory:
+              command: |
+                mkdir -p /var/awslogs/state
+                # log rotate - archive directory
+                mkdir -p /var/log/whatsapp/archive
+            02_update_conf_files:
+              command: !Join
+                - ""
+                - - |
+                    # Copy conf file templates
+                    aws s3 cp s3://wa-biz-cfn/config/awslogs.conf.tmpl /etc/awslogs/awslogs.conf.tmpl
+                    aws s3 cp s3://wa-biz-cfn/config/awscli.conf.tmpl /etc/awslogs/awscli.conf.tmpl
+                    aws s3 cp s3://wa-biz-cfn/config/logrotate.conf /etc/logrotate.d/whatsapp
+                    chmod 444 /etc/awslogs/*.tmpl
+
+                    # Create sed command file
+                    SED_CMD_FILE=/tmp/sed.cmds
+                  - |+
+                  - echo "s#%cfnlogs%#"
+                  - !Ref WALogGroup
+                  - >
+                    "#g" > ${SED_CMD_FILE}
+                  - |+
+                  - echo "s#%region%#"
+                  - !Ref AWS::Region
+                  - >
+                    "#g" >> ${SED_CMD_FILE}
+                  - |+
+                    # Perform replacement/transformation of config files
+                    cd /etc/awslogs/
+                    for file in awslogs.conf awscli.conf; do
+                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
+                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
+                    done
+            03_run_awslogs_agent_setup:
+              command: !Sub |
+                python /tmp/awslogs-agent-setup.py --region ${AWS::Region} \
+                  -n -c /etc/awslogs/awslogs.conf
+            04_setup_wa_logs:
+              command: |
+                # Copy script
+                aws s3 cp s3://wa-biz-cfn/scripts/ec2.py /opt/whatsapp/bin/ec2.py
+                chmod +x /opt/whatsapp/bin/ec2.py
+            05_cronjob_docker_cleanup:
+              command: |
+                # Setup a cron job to run the docker cleanup script every day.
+                aws s3 cp s3://wa-biz-cfn/scripts/docker_log_cleanup.sh /opt/whatsapp/bin/docker_log_cleanup.sh
+                chmod +x /opt/whatsapp/bin/docker_log_cleanup.sh
+                crontab -l > /tmp/crontab_docker_cleanup.txt
+                echo '0 0 * * * /opt/whatsapp/bin/docker_log_cleanup.sh' >> /tmp/crontab_docker_cleanup.txt
+                crontab /tmp/crontab_docker_cleanup.txt
+          services:
+            sysvinit:
+              awslogs:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - /etc/awslogs/awslogs.conf
+    Properties:
+      LaunchTemplateData:
+        ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMIID]
+        SecurityGroupIds: [!GetAtt EcsSecurityGroup.GroupId]
+        InstanceType:
+          !FindInMap [
+            MessageTypeMapToInstanceType,
+            !Ref "MessageType",
+            !Ref "EnvThroughput",
+          ]
+        BlockDeviceMappings:
+          - DeviceName: "/dev/sda1"
+            Ebs:
+              DeleteOnTermination: "true"
+              VolumeSize: !Ref "EBSVolumeSize"
+              VolumeType: "gp2"
+        IamInstanceProfile:
+          Name: !Ref "EC2InstanceProfile"
+        KeyName: !Ref "KeyName"
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                Content-Type: multipart/mixed; boundary="//"
+                MIME-Version: 1.0
+
+                --//
+                Content-Type: text/cloud-config; charset="us-ascii"
+                MIME-Version: 1.0
+                Content-Transfer-Encoding: 7bit
+                Content-Disposition: attachment; filename="cloud-config.txt"
+
+                #cloud-config
+                bootcmd:
+                #disable hyper-threading
+                #- for cpunum in $(cat /sys/devices/system/cpu/cpu*/topology/thread_siblings_list | cut -b3 | tr ',' '\n' | sort -un); do echo 0 > /sys/devices/system/cpu/cpu$cpunum/online; done
+
+                output: {all: '| tee -a /var/log/cloud-init-output.log'}
+
+                --//
+                Content-Type: text/x-shellscript; charset="us-ascii"
+                MIME-Version: 1.0
+                Content-Transfer-Encoding: 7bit
+                Content-Disposition: attachment; filename="userdata.txt"
+
+                #!/bin/bash -xe
+                # Setup cfn-init, cfn-signal and cfn-hup script.
+                yum -y install epel-release
+                yum -y install python3
+                yum -y install python3-pip
+                pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+                cp -v /usr/local/init/redhat/cfn-hup /etc/init.d/cfn-hup
+                chmod +x /etc/init.d/cfn-hup
+
+                # Invoke DockerConfig configset to setup docker and ecs agent.
+                cfn-init -v --stack ${AWS::StackName} --resource ContainerInstances --configsets DockerConfig --region ${AWS::Region}
+                result=$(($result + $?))
+                echo "CFN-Init (DockerConfig) status: $result" >> /var/log/whatsapp.log
+
+                # Invoke LogsConfig configset to setup awslog and whatsapp log.
+                cfn-init -v --stack ${AWS::StackName} --resource ContainerInstances --configsets LogsConfig --region ${AWS::Region}
+                result=$(($result + $?))
+                echo "CFN-Init (LogsConfig) status: $result" >> /var/log/whatsapp.log
+
+                # Gather network information
+                /opt/whatsapp/bin/ec2.py ${AWS::Region} ${VpcId} ${SubnetIds} >> /var/log/whatsapp.log 2>&1
+                echo "Checking network connectivity ..." >> /var/log/whatsapp.log
+                ping -c 3 -W 1 www.whatsapp.com >> /var/log/whatsapp.log 2>&1
+
+                mkdir -p /opt/certs
+                # Download SSL DB CA (bundle) here
+                if [ ! -z ${DBCaUrl} ]; then
+                  echo "Downloading CA bundle ..." >> /var/log/whatsapp.log
+                  cd /opt/certs && wget ${DBCaUrl} -O db-ca.pem
+                  ls -al /opt/certs/db-ca.pem >> /var/log/whatsapp.log
+                fi
+
+                # Download SSL DB Cert here
+                if [ ! -z ${DBCertUrl} ]; then
+                  echo "Downloading certificate ..." >> /var/log/whatsapp.log
+                  cd /opt/certs && wget ${DBCertUrl} -O db-cert.pem
+                  ls -al /opt/certs/db-cert.pem >> /var/log/whatsapp.log
+                fi
+
+                # Download SSL DB Key here
+                if [ ! -z ${DBKeyUrl} ]; then
+                  echo "Downloading key ..." >> /var/log/whatsapp.log
+                  cd /opt/certs && wget ${DBKeyUrl} -O db-key.pem
+                  ls -al /opt/certs/db-key.pem >> /var/log/whatsapp.log
+                fi
+
+                # Mount EFS
+                result=0
+                cfn-init -v --stack ${AWS::StackName} --resource ContainerInstances --configsets MountConfig --region ${AWS::Region}
+                result=$(($result + $?))
+                echo "CFN-Init (MountConfig) status: $result" >> /var/log/whatsapp.log
+
+                mkdir -p /etc/docker
+                cat << EOF > /etc/docker/daemon.json
+                {
+                  "insecure-registries": ["registry.whatsapp.net:443"],
+                  "live-restore": true,
+                  "log-opts": {
+                    "max-size": "${LogMaxSize}m",
+                    "max-file": "${LogMaxFiles}"
+                  }
+                }
+                EOF
+
+                systemctl enable docker
+                systemctl start docker
+                result=$(($result + $?))
+                echo "Docker service start status: $result" >> /var/log/whatsapp.log
+
+                # Update ECS config file
+                echo "ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true" >> /etc/ecs/ecs.config #required for using SSM parameter store
+                echo "ECS_ENABLE_CONTAINER_METADATA=true" >> /etc/ecs/ecs.config
+                echo "ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=72h" >> /etc/ecs/ecs.config
+                sed -i.bak 's#ECS_CLUSTER=.*#ECS_CLUSTER=${ECSCluster}#g' /etc/ecs/ecs.config
+                systemctl enable docker-container@ecs-agent.service
+                systemctl start docker-container@ecs-agent.service
+                result=$(($result + $?))
+                echo "ECS agent service start status: $result" >> /var/log/whatsapp.log
+
+                echo "54.242.69.11    registry.whatsapp.net" >> /etc/hosts
+                echo "CreateDB?=${CreateDB} Host=${DBHost} Hostname=${DBHostname}" >> /var/log/whatsapp.log
+
+                if [ ${HAMode} == 'Yes' ]
+                then
+                  cfn-signal -e $result --stack ${AWS::StackName} --resource HAECSAutoScalingGroup --region ${AWS::Region}
+                else
+                  cfn-signal -e $result --stack ${AWS::StackName} --resource SingleECSAutoScalingGroup --region ${AWS::Region}
+                fi
+                echo "Signalled CFN with status: $result" >> /var/log/whatsapp.log
+
+                --//--
+              - {
+                  DBCaUrl: !If [IsDBConnEncrypted, !Ref "DBConnCA", ""],
+                  DBCertUrl: !If [IsDBConnEncrypted, !Ref "DBConnCert", ""],
+                  DBKeyUrl: !If [IsDBConnEncrypted, !Ref "DBConnKey", ""],
+                  CreateDB: !If [CreateDBInstance, "Yes", "No"],
+                  DBHost: !GetAtt StoreHostName.Value,
+                  LogMaxSize: !Ref ContainerLogMaxSize,
+                  LogMaxFiles: !Ref ContainerLogMaxFiles,
+                  SubnetIds:
+                    !Join [
+                      ",",
+                      [
+                        Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+                        Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+                      ],
+                    ],
+                  VpcId:
+                    !Join [
+                      "",
+                      [Fn::ImportValue: !Sub "${NetworkStackName}-VPC"],
+                    ],
+                  HAMode: !If [IsHA, "Yes", "No"],
+                }
+
+  WebContainerInstances:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          DockerConfig:
+            - pkg_install
+            - ecs_agent_setup
+          MountConfig:
+            - mnt_setup
+            - mnt_execute
+          LogsConfig:
+            - log_setup
+        pkg_install:
+          commands:
+            01_update_and_prepare:
+              command: |
+                yum update -y
+                yum install -y wget yum-utils
+                yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                yum makecache fast
+            02_pkg_install:
+              command: |
+                yum install -y docker-ce mysql
+                yum install -y epel-release
+                yum install -y python-boto3
+                pip3 install awscli
+        ecs_agent_setup:
+          files:
+            /etc/ecs/ecs.config:
+              content: |
+                ECS_DATADIR=/data
+                ECS_ENABLE_TASK_IAM_ROLE=true
+                ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true
+                ECS_LOGFILE=/log/ecs-agent.log
+                ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs"]
+                ECS_LOGLEVEL=info
+                ECS_CLUSTER=default
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/systemd/system/docker-container@ecs-agent.service:
+              content: |
+                [Unit]
+                Description=Docker Container %I
+                Requires=docker.service
+                After=docker.service
+
+                [Service]
+                Restart=always
+                ExecStart=/usr/bin/docker run --name %i \
+                  --privileged \
+                  --restart=on-failure:10 \
+                  --volume=/var/run:/var/run \
+                  --volume=/var/log/ecs/:/log:Z \
+                  --volume=/var/lib/ecs/data:/data:Z \
+                  --volume=/etc/ecs:/etc/ecs \
+                  --net=host \
+                  --env-file=/etc/ecs/ecs.config \
+                  amazon/amazon-ecs-agent:latest
+                ExecStop=/usr/bin/docker rm -f %i
+
+                [Install]
+                WantedBy=default.target
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          commands:
+            01_ecs_related:
+              command: |
+                echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf
+                sysctl -p /etc/sysctl.conf
+                iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+                iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
+                iptables-save > /etc/sysconfig/iptables
+            02_disable_docker_ecs:
+              command: |
+                systemctl disable docker
+                systemctl disable docker-container@ecs-agent.service
+            03_create_log_dir:
+              command: |
+                mkdir -p /var/log/ecs /var/lib/ecs/data
+            04_weekly_auto_update:
+              command: |
+                # Setup a cron job to run the ecs agent update script every week.
+                aws s3 cp s3://wa-biz-cfn/scripts/update_ecs_agent.sh /opt/whatsapp/bin/update_ecs_agent.sh
+                chmod +x /opt/whatsapp/bin/update_ecs_agent.sh
+                crontab -l > /tmp/crontab_update_ecs.txt
+                echo '0 0 * * 0 /opt/whatsapp/bin/update_ecs_agent.sh' >> /tmp/crontab_update_ecs.txt
+                crontab /tmp/crontab_update_ecs.txt
+        mnt_setup:
+          packages:
+            yum:
+              nfs-utils: []
+          commands:
+            01_createdir:
+              command: !Sub
+                - mkdir -p ${MntPoint}
+                - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        mnt_execute:
+          commands:
+            01_mount:
+              command: !Sub
+                - |
+                  mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${EFSName}.efs.${AWS::Region}.amazonaws.com:/ ${MntPoint}
+                  echo "${EFSName}.efs.${AWS::Region}.amazonaws.com:/ ${MntPoint} nfs4  nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2  0 0" >> /etc/fstab
+
+                  echo "Mount status: $?" >> /var/log/whatsapp.log
+                  if [ $? -ne 0 ]; then
+                    exit $?
+                  fi
+                - {
+                    MntPoint: !FindInMap [Constants, Values, MountPoint],
+                    EFSName: !If [CreateEFS, !Ref FileSystem, !Ref EFSId],
+                  }
+            02_subdirs:
+              command: !Sub
+                - cd ${MntPoint} && mkdir -p data media
+                - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+            03_permissions:
+              command: !Sub
+                - chown centos:centos ${MntPoint}/data ${MntPoint}/media
+                - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
+        log_setup:
+          files:
+            /tmp/awslogs-agent-setup.py:
+              source: https://s3.amazonaws.com//aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
+              mode: "000555"
+              owner: root
+              group: root
+          commands:
+            01_create_state_directory:
+              command: |
+                mkdir -p /var/awslogs/state
+                # log rotate - archive directory
+                mkdir -p /var/log/whatsapp/archive
+            02_update_conf_files:
+              command: !Join
+                - ""
+                - - |
+                    # Copy conf file templates
+                    aws s3 cp s3://wa-biz-cfn/config/awslogs.conf.tmpl /etc/awslogs/awslogs.conf.tmpl
+                    aws s3 cp s3://wa-biz-cfn/config/awscli.conf.tmpl /etc/awslogs/awscli.conf.tmpl
+                    aws s3 cp s3://wa-biz-cfn/config/logrotate.conf /etc/logrotate.d/whatsapp
+                    chmod 444 /etc/awslogs/*.tmpl
+
+                    # Create sed command file
+                    SED_CMD_FILE=/tmp/sed.cmds
+                  - |+
+                  - echo "s#%cfnlogs%#"
+                  - !Ref WALogGroup
+                  - >
+                    "#g" > ${SED_CMD_FILE}
+                  - |+
+                  - echo "s#%region%#"
+                  - !Ref AWS::Region
+                  - >
+                    "#g" >> ${SED_CMD_FILE}
+                  - |+
+                    # Perform replacement/transformation of config files
+                    cd /etc/awslogs/
+                    for file in awslogs.conf awscli.conf; do
+                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
+                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
+                    done
+            03_run_awslogs_agent_setup:
+              command: !Sub |
+                python /tmp/awslogs-agent-setup.py --region ${AWS::Region} \
+                  -n -c /etc/awslogs/awslogs.conf
+            04_setup_wa_logs:
+              command: |
+                # Copy script
+                aws s3 cp s3://wa-biz-cfn/scripts/ec2.py /opt/whatsapp/bin/ec2.py
+                chmod +x /opt/whatsapp/bin/ec2.py
+            05_cronjob_docker_cleanup:
+              command: |
+                # Setup a cron job to run the docker cleanup script every day.
+                aws s3 cp s3://wa-biz-cfn/scripts/docker_log_cleanup.sh /opt/whatsapp/bin/docker_log_cleanup.sh
+                chmod +x /opt/whatsapp/bin/docker_log_cleanup.sh
+                crontab -l > /tmp/crontab_docker_cleanup.txt
+                echo '0 0 * * * /opt/whatsapp/bin/docker_log_cleanup.sh' >> /tmp/crontab_docker_cleanup.txt
+                crontab /tmp/crontab_docker_cleanup.txt
+          services:
+            sysvinit:
+              awslogs:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - /etc/awslogs/awslogs.conf
+    Properties:
+      LaunchTemplateData:
+        ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMIID]
+        SecurityGroupIds: [!GetAtt EcsSecurityGroup.GroupId]
+        InstanceType: "c5.large"
+        BlockDeviceMappings:
+          - DeviceName: "/dev/sda1"
+            Ebs:
+              DeleteOnTermination: "true"
+              VolumeSize: !Ref "EBSVolumeSize"
+              VolumeType: "gp2"
+        IamInstanceProfile:
+          Name: !Ref "EC2InstanceProfile"
+        KeyName: !Ref "KeyName"
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                Content-Type: multipart/mixed; boundary="//"
+                MIME-Version: 1.0
+
+                --//
+                Content-Type: text/cloud-config; charset="us-ascii"
+                MIME-Version: 1.0
+                Content-Transfer-Encoding: 7bit
+                Content-Disposition: attachment; filename="cloud-config.txt"
+
+                #cloud-config
+                bootcmd:
+                #disable hyper-threading
+                #- for cpunum in $(cat /sys/devices/system/cpu/cpu*/topology/thread_siblings_list | cut -b3 | tr ',' '\n' | sort -un); do echo 0 > /sys/devices/system/cpu/cpu$cpunum/online; done
+
+                output: {all: '| tee -a /var/log/cloud-init-output.log'}
+
+                --//
+                Content-Type: text/x-shellscript; charset="us-ascii"
+                MIME-Version: 1.0
+                Content-Transfer-Encoding: 7bit
+                Content-Disposition: attachment; filename="userdata.txt"
+
+                #!/bin/bash -xe
+                # Setup cfn-init, cfn-signal and cfn-hup script.
+                yum -y install epel-release
+                yum -y install python3
+                yum -y install python3-pip
+                pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+                cp -v /usr/local/init/redhat/cfn-hup /etc/init.d/cfn-hup
+                chmod +x /etc/init.d/cfn-hup
+
+                # Invoke DockerConfig configset to setup docker and ecs agent.
+                cfn-init -v --stack ${AWS::StackName} --resource WebContainerInstances --configsets DockerConfig --region ${AWS::Region}
+                result=$(($result + $?))
+                echo "CFN-Init (DockerConfig) status: $result" >> /var/log/whatsapp.log
+
+                # Invoke LogsConfig configset to setup awslog and whatsapp log.
+                cfn-init -v --stack ${AWS::StackName} --resource WebContainerInstances --configsets LogsConfig --region ${AWS::Region}
+                result=$(($result + $?))
+                echo "CFN-Init (LogsConfig) status: $result" >> /var/log/whatsapp.log
+
+                # Gather network information
+                /opt/whatsapp/bin/ec2.py ${AWS::Region} ${VpcId} ${SubnetIds} >> /var/log/whatsapp.log 2>&1
+                echo "Checking network connectivity ..." >> /var/log/whatsapp.log
+                ping -c 3 -W 1 www.whatsapp.com >> /var/log/whatsapp.log 2>&1
+
+                mkdir -p /opt/certs
+                # Download SSL DB CA (bundle) here
+                if [ ! -z ${DBCaUrl} ]; then
+                  echo "Downloading CA bundle ..." >> /var/log/whatsapp.log
+                  cd /opt/certs && wget ${DBCaUrl} -O db-ca.pem
+                  ls -al /opt/certs/db-ca.pem >> /var/log/whatsapp.log
+                fi
+
+                # Download SSL DB Cert here
+                if [ ! -z ${DBCertUrl} ]; then
+                  echo "Downloading certificate ..." >> /var/log/whatsapp.log
+                  cd /opt/certs && wget ${DBCertUrl} -O db-cert.pem
+                  ls -al /opt/certs/db-cert.pem >> /var/log/whatsapp.log
+                fi
+
+                # Download SSL DB Key here
+                if [ ! -z ${DBKeyUrl} ]; then
+                  echo "Downloading key ..." >> /var/log/whatsapp.log
+                  cd /opt/certs && wget ${DBKeyUrl} -O db-key.pem
+                  ls -al /opt/certs/db-key.pem >> /var/log/whatsapp.log
+                fi
+
+                # Mount EFS
+                result=0
+                cfn-init -v --stack ${AWS::StackName} --resource WebContainerInstances --configsets MountConfig --region ${AWS::Region}
+                result=$(($result + $?))
+                echo "CFN-Init (MountConfig) status: $result" >> /var/log/whatsapp.log
+
+                mkdir -p /etc/docker
+                cat << EOF > /etc/docker/daemon.json
+                {
+                  "insecure-registries": ["registry.whatsapp.net:443"],
+                  "live-restore": true,
+                  "log-opts": {
+                    "max-size": "${LogMaxSize}m",
+                    "max-file": "${LogMaxFiles}"
+                  }
+                }
+                EOF
+
+                systemctl enable docker
+                systemctl start docker
+                result=$(($result + $?))
+                echo "Docker service start status: $result" >> /var/log/whatsapp.log
+
+                # Update ECS config file
+                echo "ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true" >> /etc/ecs/ecs.config #required for using SSM parameter store
+                echo "ECS_ENABLE_CONTAINER_METADATA=true" >> /etc/ecs/ecs.config
+                echo "ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=72h" >> /etc/ecs/ecs.config
+                sed -i.bak 's#ECS_CLUSTER=.*#ECS_CLUSTER=${ECSCluster}#g' /etc/ecs/ecs.config
+                systemctl enable docker-container@ecs-agent.service
+                systemctl start docker-container@ecs-agent.service
+                result=$(($result + $?))
+                echo "ECS agent service start status: $result" >> /var/log/whatsapp.log
+
+                echo "54.242.69.11    registry.whatsapp.net" >> /etc/hosts
+                echo "CreateDB?=${CreateDB} Host=${DBHost} Hostname=${DBHostname}" >> /var/log/whatsapp.log
+
+                cfn-signal -e $result --stack ${AWS::StackName} --resource HAECSAutoScalingGroupWeb --region ${AWS::Region}
+
+                echo "Signalled CFN with status: $result" >> /var/log/whatsapp.log
+
+                --//--
+              - {
+                  DBCaUrl: !If [IsDBConnEncrypted, !Ref "DBConnCA", ""],
+                  DBCertUrl: !If [IsDBConnEncrypted, !Ref "DBConnCert", ""],
+                  DBKeyUrl: !If [IsDBConnEncrypted, !Ref "DBConnKey", ""],
+                  CreateDB: !If [CreateDBInstance, "Yes", "No"],
+                  DBHost: !GetAtt StoreHostName.Value,
+                  LogMaxSize: !Ref ContainerLogMaxSize,
+                  LogMaxFiles: !Ref ContainerLogMaxFiles,
+                  SubnetIds:
+                    !Join [
+                      ",",
+                      [
+                        Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1",
+                        Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2",
+                      ],
+                    ],
+                  VpcId:
+                    !Join [
+                      "",
+                      [Fn::ImportValue: !Sub "${NetworkStackName}-VPC"],
+                    ],
+                  HAMode: !If [IsHA, "Yes", "No"],
+                }
+
+  # Only one load balancer can be associated with the service
+  WAEntService:
+    Condition: IsNotHA
+    Type: AWS::ECS::Service
+    DependsOn:
+      - SingleECSAutoScalingGroup
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      DesiredCount: "1"
+      LoadBalancers: !If
+        - CreateLBListenerForHostExporterPorts
+        - - ContainerName: wa-web
+            ContainerPort: "443"
+            TargetGroupArn: !Ref WAEntTargetGroup
+        - - ContainerName: wa-web
+            ContainerPort: "443"
+            TargetGroupArn: !Ref WAEntTargetGroup
+          - ContainerName: wa-web
+            ContainerPort: "443"
+            TargetGroupArn: !Ref WAEntTargetGroupExport8080
+          - ContainerName: wa-web
+            ContainerPort: "443"
+            TargetGroupArn: !Ref WAEntTargetGroupExport9100
+      Role: !GetAtt ECSScalingRole.Arn
+      TaskDefinition: !Ref "WAEntTaskdefinition"
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+
+  WAEntWebService:
+    Condition: IsHA
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HAECSAutoScalingGroupWeb
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      DesiredCount:
+        !FindInMap [EnvConfig, ThroughputMapToWebApps, !Ref "EnvThroughput"]
+      LoadBalancers:
+        - ContainerName: wa-web
+          ContainerPort: "443"
+          TargetGroupArn: !Ref WAEntTargetGroup
+      Role: !GetAtt ECSScalingRole.Arn
+      TaskDefinition: !Ref "WAEntHAWebTaskdefinition"
+      PlacementConstraints:
+        - Type: memberOf
+          Expression: !Sub
+            - attribute:ecs.availability-zone in [${Zone}]
+            - Zone: !Select [1, Fn::GetAZs: !Ref "AWS::Region"]
+        - Type: distinctInstance
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 25
+
+  WAEntMasterService:
+    Condition: IsHA
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HAECSAutoScalingGroup
+      - WAEntWebService
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      DesiredCount: 2
+      # Role: !GetAtt ECSScalingRole.Arn
+      TaskDefinition: !Ref "WAEntHAMasterTaskdefinition"
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 50
+      PlacementConstraints:
+        - Type: memberOf
+          Expression: !Sub
+            - attribute:ecs.availability-zone in [${Zone}]
+            - Zone: !Select [1, Fn::GetAZs: !Ref "AWS::Region"]
+
+  WAEntCoreappService:
+    Condition: IsHA
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HAECSAutoScalingGroup
+      - WAEntMasterService
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      DesiredCount:
+        !FindInMap [
+          EnvConfig,
+          "NumCoreappInstances",
+          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        ]
+      # Role: !GetAtt ECSScalingRole.Arn
+      TaskDefinition: !Ref "WAEntHACoreappTaskdefinition"
+      PlacementConstraints:
+        - Type: memberOf
+          Expression: !Sub
+            - attribute:ecs.availability-zone in [${Zone}]
+            - Zone: !Select [0, Fn::GetAZs: !Ref "AWS::Region"]
+        - Type: distinctInstance
+      PlacementStrategies:
+        - Type: spread
+          Field: instanceId
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 25
+
+  # Run two exporter containers on the CoreApp host to collect container and
+  # machine metrics and expose /metrics endpoint to Prometheus.
+  # See host-exporter-compose.yml in
+  # https://developers.facebook.com/docs/whatsapp/monitoring/instance
+  HostExporterTaskDefinition:
+    Condition: IsHostExporterEnabled
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: cadvisor
+          Image: "google/cadvisor:v0.30.2"
+          MemoryReservation: 128
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "cadvisor", !Ref "AWS::NoValue"]
+          MountPoints:
+            - ContainerPath: /rootfs
+              SourceVolume: root-vol
+              ReadOnly: true
+            - ContainerPath: /sys
+              SourceVolume: sys-vol
+              ReadOnly: true
+            - ContainerPath: /var/lib/docker
+              SourceVolume: docker-vol
+              ReadOnly: true
+            - ContainerPath: /dev/disk
+              SourceVolume: device-vol
+              ReadOnly: true
+            - ContainerPath: /var/run
+              SourceVolume: tmpfs
+          PortMappings:
+            - ContainerPort: 8080
+              HostPort: 8080
+        - Name: node-exporter
+          Image: "prom/node-exporter:v0.16.0"
+          MemoryReservation: 32
+          LogConfiguration:
+            LogDriver: !Ref "ContainerLogDriver"
+            Options:
+              awslogs-group:
+                !If [IsAWSLogDriver, !Ref "WALogGroup", !Ref "AWS::NoValue"]
+              awslogs-region:
+                !If [IsAWSLogDriver, !Ref "AWS::Region", !Ref "AWS::NoValue"]
+              awslogs-stream-prefix:
+                !If [IsAWSLogDriver, "node-exporter", !Ref "AWS::NoValue"]
+          MountPoints:
+            - ContainerPath: /rootfs
+              SourceVolume: root-vol
+              ReadOnly: true
+            - ContainerPath: /host/sys
+              SourceVolume: sys-vol
+              ReadOnly: true
+            - ContainerPath: /host/proc
+              SourceVolume: proc-vol
+              ReadOnly: true
+          PortMappings:
+            - ContainerPort: 9100
+              HostPort: 9100
+      Volumes:
+        - Name: root-vol
+          Host:
+            SourcePath: /
+        - Name: tmpfs
+          Host:
+            SourcePath: /var/run
+        - Name: sys-vol
+          Host:
+            SourcePath: /sys
+        - Name: docker-vol
+          Host:
+            SourcePath: /var/lib/docker
+        - Name: device-vol
+          Host:
+            SourcePath: /dev/disk
+        - Name: proc-vol
+          Host:
+            SourcePath: /proc
+
+  HostExporterService:
+    Condition: IsHostExporterEnabled
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      SchedulingStrategy: DAEMON
+      TaskDefinition: !Ref "HostExporterTaskDefinition"
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+
+  ClusterMemoryHighUtilization:
+    Condition: IsHA
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: ClusterMemoryScaleUpPolicy
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref ClusterMemoryScaleUpPolicy
+      AlarmDescription: Alarm if the cluster memory reservation goes above high threshold
+      AlarmName: !Sub ClusterMemHighUtil-${AWS::StackName}
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      EvaluationPeriods: 1
+      MetricName: MemoryReservation
+      Namespace: AWS/ECS
+      Period: 60
+      Statistic: Average
+      Threshold: !FindInMap [Constants, Values, HiMemoryUtilPercent]
+      Unit: Percent
+
+  ClusterMemoryLowUtilization:
+    Condition: IsHA
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: ClusterMemoryScaleDownPolicy
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref ClusterMemoryScaleDownPolicy
+      AlarmDescription: Alarm if the cluster memory reservation goes below low percent
+      AlarmName: !Sub ClusterMemLowUtil-${AWS::StackName}
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      EvaluationPeriods: 1
+      MetricName: MemoryReservation
+      Namespace: AWS/ECS
+      Period: 60
+      Statistic: Average
+      Threshold: !FindInMap [Constants, Values, LoMemoryUtilPercent]
+      Unit: Percent
+
+  ClusterMemoryScaleUpPolicy:
+    Condition: IsHA
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn: HAECSAutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref HAECSAutoScalingGroup
+      Cooldown: 60
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+
+  ClusterMemoryScaleDownPolicy:
+    Condition: IsHA
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn: HAECSAutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref HAECSAutoScalingGroup
+      Cooldown: 60
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1
+
+  ECSTaskExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /whatsapp/
+
+  ECSScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /whatsapp/
+
+  ECSScalingPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECSScalingPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "elasticloadbalancing:Describe*"
+              - "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+              - "elasticloadbalancing:DeregisterTargets"
+              - "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+              - "elasticloadbalancing:RegisterTargets"
+              - "ec2:Describe*"
+              - "ec2:AuthorizeSecurityGroupIngress"
+            Resource: "*"
+      Roles: [!Ref "ECSScalingRole"]
+
+  AutoscalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [application-autoscaling.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      Path: /whatsapp/
+      Policies:
+        - PolicyName: service-autoscaling
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "application-autoscaling:*"
+                  - "cloudwatch:DescribeAlarms"
+                  - "cloudwatch:PutMetricAlarm"
+                  - "ecs:DescribeServices"
+                  - "ecs:UpdateService"
+                Resource: "*"
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !FindInMap [Constants, Values, EC2Principal]
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+
+      Path: /whatsapp/
+
+  ECSManagementPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECSManagementPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "ecs:DeregisterContainerInstance"
+              - "ecs:RegisterContainerInstance"
+              - "ecs:Submit*"
+            Resource: !GetAtt ECSCluster.Arn
+          - Effect: Allow
+            Action:
+              - "ecs:StartTelemetrySession"
+              - "ecs:Poll"
+            Resource: !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+          - Effect: Allow
+            Action:
+              - "ecs:DiscoverPollEndpoint"
+            Resource: "*"
+      Roles: [!Ref "EC2Role"]
+
+  LogPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LogPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "logs:DescribeLogStreams"
+            Resource: "arn:aws:logs:*:*:*"
+      Roles: [!Ref "EC2Role"]
+
+  S3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3Policy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:GetObject"
+              - "s3:GetObjectVersion"
+            Resource: "arn:aws:s3:::wa-biz-cfn/*"
+      Roles: [!Ref "EC2Role"]
+
+  SSMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SSMPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "ssm:GetParameter"
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}-WA*"
+      Roles: [!Ref "EC2Role"]
+
+  KMSPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: KMSPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "kms:Decrypt"
+            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+      Roles: [!Ref "EC2Role"]
+
+  CWPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CWPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "cloudwatch:PutMetricData"
+            Resource: "*"
+      Roles: [!Ref "EC2Role"]
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /whatsapp/
+      Roles:
+        - !Ref "EC2Role"
+
+Outputs:
+  WAEntLB:
+    Description: Your WhatsApp Enterprise Client URL
+    Value: !Join ["", [!GetAtt [WAEntLB, DNSName]]]
+    Export:
+      Name: !Sub "${AWS::StackName}-WAEntLB"
+  ECSCluster:
+    Description: ECS Cluster
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub "${AWS::StackName}-ECSCluster"
+  DBHostname:
+    Description: Database Hostname
+    Value:
+      !If [
+        CreateDBInstance,
+        !GetAtt dbStack.Outputs.DBHostname,
+        !Ref DBHostname,
+      ]
+    Export:
+      Name: !Sub "${AWS::StackName}-DBHostname"
+  DBPort:
+    Description: Database Port
+    Value: !If [CreateDBInstance, !GetAtt dbStack.Outputs.DBPort, !Ref DBPort]
+    Export:
+      Name: !Sub "${AWS::StackName}-DBPort"
+  LogRetentionDays:
+    Description: Number of days to retain logs
+    Value: !Ref LogRetentionDays
+    Export:
+      Name: !Sub "${AWS::StackName}-LogRetentionDays"
+  DBConnCA:
+    Description: Value of DB Connection CA if configured
+    Value: !If [IsDBConnCAConfigured, !Ref DBConnCA, "NA"]
+    Export:
+      Name: !Sub "${AWS::StackName}-DBConnCA"
+  DBConnCert:
+    Description: Value of DB Connection Cert if configured
+    Value: !If [IsDBConnCertConfigured, !Ref DBConnCert, "NA"]
+    Export:
+      Name: !Sub "${AWS::StackName}-DBConnCert"
+  DBConnKey:
+    Description: Value of DB Connection Key if configured
+    Value: !If [IsDBConnKeyConfigured, !Ref DBConnKey, "NA"]
+    Export:
+      Name: !Sub "${AWS::StackName}-DBConnKey"
+  Grafana:
+    Description: Grafana Dashboard URL
+    Value: !GetAtt ms.Outputs.GrafanaDashboardURL
+    Export:
+      Name: !Sub "${AWS::StackName}-GrafanaDashboardURL"
+  ShardCount:
+    Description: Number of shards to configure for the WhatsApp Business API
+    Value: !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"]

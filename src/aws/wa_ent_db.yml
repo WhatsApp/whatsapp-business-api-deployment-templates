@@ -1,0 +1,210 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation template to create database(s) required for WhatsApp.
+  This could be optional too, as customers *might* have RDS in its AWS
+  infrastructure already. However, this template is provided for reference
+  to create database instances (RDS-MySQL), if customers do not have DB in
+  its infrastructure
+  Note- At least 2 subnets should be selected
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Network configuration"
+        Parameters:
+          - VpcId
+          - SubnetIDs
+      - Label:
+          default: "Database configuration"
+        Parameters:
+          - DBInstanceClass
+          - DBUser
+          - DBPassword
+          - DBPort
+      - Label:
+          default: "Security configuration"
+        Parameters:
+          - DBEncryptionKeyType
+          - EncryptionKeyId
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC for DB
+  SubnetIDs:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select subnets for DB. Subnets must be in same VPC
+  DBEncryptionKeyType:
+    Description: Please choose key type for DB encryption
+    Type: String
+    Default: Default-Key
+    AllowedValues:
+      - Unencrypted
+      - Default-Key
+      - Create-New-Key
+      - User-Provided-Key
+  EncryptionKeyId:
+    Description: Provide encryption key id
+    Type: String
+    Default: ""
+  DBUser:
+    NoEcho: "true"
+    Description: The database admin account username
+    Type: String
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: "true"
+    Description: The database admin account password
+    Type: String
+    MinLength: "8"
+    MaxLength: "41"
+    ConstraintDescription: must have at least 8 & at most 41 characters
+  DBPort:
+    Description: Database port
+    Type: Number
+    Default: 3306
+    MinValue: 1025
+    MaxValue: 65535
+    ConstraintDescription: must be a valid number between 1025-65535
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    AllowedValues:
+      - db.r5.large
+      - db.r5.xlarge
+      - db.r5.2xlarge
+      - db.r5.4xlarge
+      - db.r5.8xlarge
+      - db.r5.12xlarge
+    ConstraintDescription: must select a valid database instance type.
+  DBEngineVersion:
+    Description: The database engine Version
+    Type: String
+    Default: 5.7.mysql_aurora.2.07.2
+
+Conditions:
+  IsUnencrypted: !Equals [!Ref DBEncryptionKeyType, Unencrypted]
+  IsDefaultKey: !Equals [!Ref DBEncryptionKeyType, Default-Key]
+  IsUserProvidedKey: !Not [!Equals [!Ref EncryptionKeyId, ""]]
+  IsCreateNewKey:
+    !And [
+      !Not [!Or [Condition: IsUnencrypted, Condition: IsDefaultKey]],
+      !Equals [!Ref EncryptionKeyId, ""],
+    ]
+
+Resources:
+  DBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Open database for access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref DBPort
+          ToPort: !Ref DBPort
+          # Open to all components
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Application
+          Value: !Ref "AWS::StackId"
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: Subnets the database belongs to
+      SubnetIds: !Ref "SubnetIDs"
+      Tags:
+        - Key: Application
+          Value: !Ref "AWS::StackId"
+
+  KMSKey:
+    Type: "AWS::KMS::Key"
+    Condition: IsCreateNewKey
+    Properties:
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub "key-${AWS::StackName}"
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Join ["", ["arn:aws:iam::", !Ref "AWS::AccountId", ":root"]]
+            Action: "kms:*"
+            Resource: "*"
+
+  RDSCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub "${AWS::StackName}"
+      CopyTagsToSnapshot: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      EnableCloudwatchLogsExports: [error, general, slowquery]
+      Engine: aurora-mysql
+      EngineMode: provisioned
+      EngineVersion: !Ref DBEngineVersion
+      KmsKeyId:
+        !If [
+          IsCreateNewKey,
+          !Ref KMSKey,
+          !If [IsUserProvidedKey, !Ref EncryptionKeyId, !Ref "AWS::NoValue"],
+        ]
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      Port: !Ref DBPort
+      StorageEncrypted: !If [IsUnencrypted, "false", "true"]
+      Tags:
+        - Key: Application
+          Value: !Ref "AWS::StackId"
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cluster"
+      VpcSecurityGroupIds: [!Ref DBSecurityGroup]
+    DeletionPolicy: Snapshot
+
+  RDSDBInstance1:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      DBClusterIdentifier:
+        Ref: RDSCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+      Engine: aurora-mysql
+      PubliclyAccessible: "false"
+      Tags:
+        - Key: Application
+          Value: !Ref "AWS::StackId"
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-db-instance1"
+
+  RDSDBInstance2:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      DBClusterIdentifier:
+        Ref: RDSCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: aurora-mysql
+      PubliclyAccessible: "false"
+      Tags:
+        - Key: Application
+          Value: !Ref "AWS::StackId"
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-db-instance2"
+
+Outputs:
+  DBHostname:
+    Description: Hostname or IP address of master database
+    Value: !GetAtt RDSCluster.Endpoint.Address
+
+  DBPort:
+    Description: Port number for connection to master database
+    Value: !GetAtt RDSCluster.Endpoint.Port
+  DBUsername:
+    Description: Username for master database connection
+    Value: !Ref "DBUser"
