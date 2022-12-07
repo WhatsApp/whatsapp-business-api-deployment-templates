@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API CFN Version 2.4.0
+# WhatsApp Business API CFN Version 3.0.0
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   AWS CloudFormation template to create WhatsApp Enterprise Client.
@@ -803,6 +803,8 @@ Resources:
           Environment:
             - Name: WA_RUNNING_ENV
               Value: "AWS"
+            - Name: WA_RUNNING_ENV_VERSION
+              Value: "v3.0.0"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: AWS_STACK_NAME
@@ -852,6 +854,8 @@ Resources:
           Environment:
             - Name: WA_RUNNING_ENV
               Value: "AWS"
+            - Name: WA_RUNNING_ENV_VERSION
+              Value: "v3.0.0"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: AWS_STACK_NAME
@@ -937,6 +941,8 @@ Resources:
               Value: 1
             - Name: WA_RUNNING_ENV
               Value: "AWS"
+            - Name: WA_RUNNING_ENV_VERSION
+              Value: "v3.0.0"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: AWS_STACK_NAME
@@ -1019,6 +1025,8 @@ Resources:
           Environment:
             - Name: WA_RUNNING_ENV
               Value: "AWS"
+            - Name: WA_RUNNING_ENV_VERSION
+              Value: "v3.0.0"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: AWS_STACK_NAME
@@ -1103,6 +1111,8 @@ Resources:
           Environment:
             - Name: WA_RUNNING_ENV
               Value: "AWS"
+            - Name: WA_RUNNING_ENV_VERSION
+              Value: "v3.0.0"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: AWS_STACK_NAME
