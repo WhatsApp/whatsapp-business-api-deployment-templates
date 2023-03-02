@@ -1497,7 +1497,9 @@ Resources:
                 - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
             03_permissions:
               command: !Sub
-                - chown centos:centos ${MntPoint}/data ${MntPoint}/media
+                -  |
+                  chown centos:centos ${MntPoint}/data ${MntPoint}/media
+                  chmod -R a+rw ${MntPoint}/data ${MntPoint}/media
                 - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
         log_setup:
           files:
