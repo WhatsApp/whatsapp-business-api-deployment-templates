@@ -790,6 +790,7 @@ Resources:
       Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
       ContainerDefinitions:
         - Name: wa-coreapp
+          Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
             !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
           MemoryReservation: "1024"
@@ -843,6 +844,7 @@ Resources:
               awslogs-stream-prefix:
                 !If [IsAWSLogDriver, "coreapp", !Ref "AWS::NoValue"]
         - Name: wa-web
+          Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
             !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag]]
           MemoryReservation: "512"
@@ -923,6 +925,7 @@ Resources:
       Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
       ContainerDefinitions:
         - Name: wa-web
+          Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
             !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag]]
           MemoryReservation: "512"
@@ -1007,6 +1010,7 @@ Resources:
       Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
       ContainerDefinitions:
         - Name: wa-master
+          Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
             !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
           MemoryReservation: "1024"
@@ -1093,6 +1097,7 @@ Resources:
       Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
       ContainerDefinitions:
         - Name: wa-coreapp
+          Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
             !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
           MemoryReservation: "1024"
