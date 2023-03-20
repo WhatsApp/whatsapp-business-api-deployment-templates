@@ -1,0 +1,42 @@
+#
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+
+# WhatsApp Business API GCP Template Version 1.0.0
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteMany
+  mountOptions:
+    - hard
+    - nconnect=8
+    - nfsvers=4.1
+    - rsize=1048576
+    - wsize=1048576
+    - actimeo=120
+    - timeo=600
+  nfs:
+    server: nfs-server.default.svc.cluster.local
+    path: "/"
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: nfs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 200Gi

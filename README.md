@@ -16,6 +16,7 @@ We have used the [Outbound Load Testing](https://developers.facebook.com/docs/wh
 |----------|-------------|----------------|
 | AWS      | v2.41.3     | 350            |
 | Azure    | v2.41.3     | 200            |
+| GCP      | v2.45.2     | 300            |
 
 *Disclaimer: Although higher throughput has been achieved with certain templates under the specific conditions, Meta does not commit to technical support for throughput that is > 250 MPS. Please use at your own discretion.*
 
@@ -28,13 +29,17 @@ We have used the [Outbound Load Testing](https://developers.facebook.com/docs/wh
 * Infra definition: [Terraform](https://www.terraform.io/)
 * Database: MySQL in VM
 * Container management: [Kubernetes](https://kubernetes.io/)
+### GCP:
+* Infra definition: [Terraform](https://www.terraform.io/)
+* Database: MySQL in VM
+* Container management: [Kubernetes](https://kubernetes.io/)
 
 ## Get Started
 1. Clone or download files based on your cloud platform from the `src` directory.
 2. Follow the step-by-step guide below to deploy the templates based on your desired throughput and message type:
   * AWS: https://developers.facebook.com/docs/whatsapp/on-premises/get-started/installation/aws
   * Azure: https://developers.facebook.com/docs/whatsapp/on-premises/get-started/installation/azure
-  * GCP (coming soon H2 2022)
+  * GCP: https://developers.facebook.com/docs/whatsapp/on-premises/get-started/installation/gcp
 
 ## Support
 We highly recommend you to deploy the templates in a testing environment first before deploying in production. We have verified the templates under the conditions documented in the [Benchmark Results](#benchmark-results) section, however, we are unable to guarantee the maximum throughput if alterations are made to the templates.
