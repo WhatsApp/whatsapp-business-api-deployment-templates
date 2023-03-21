@@ -14,8 +14,8 @@ We have used the [Outbound Load Testing](https://developers.facebook.com/docs/wh
 
 | Platform | API Version | Max Throughput |
 |----------|-------------|----------------|
-| AWS      | v2.41.3     | 350            |
-| Azure    | v2.41.3     | 200            |
+| AWS      | v2.45.2     | 350            |
+| Azure    | v2.45.2     | 200            |
 | GCP      | v2.45.2     | 300            |
 
 *Disclaimer: Although higher throughput has been achieved with certain templates under the specific conditions, Meta does not commit to technical support for throughput that is > 250 MPS. Please use at your own discretion.*
