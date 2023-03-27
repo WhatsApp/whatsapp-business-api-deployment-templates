@@ -465,7 +465,7 @@ Resources:
     Properties:
       IamInstanceProfile: !Ref "EC2InstanceProfile"
       ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMIID]
-      InstanceType: t2.medium
+      InstanceType: t2.xlarge
       KeyName: !Ref "KeyName"
       SecurityGroups: [!Ref "EcsSecurityGroup"]
       BlockDeviceMappings:
