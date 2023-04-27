@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta, Inc. and its affiliates.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,6 +21,7 @@ Metadata:
           - HAEnabled
           - EnvThroughput
           - MessageType
+          - CostEffectiveEnabled
           - HostExporterEnabled
       - Label:
           default: "Network configuration"
@@ -86,6 +87,8 @@ Metadata:
         default: "Desired throughput"
       HAEnabled:
         default: "High Availability"
+      CostEffectiveEnabled:
+        default: "Cost Effective"
       HostExporterEnabled:
         default: "Host exporter for instance monitoring"
       SubnetCount:
@@ -263,7 +266,7 @@ Parameters:
     Default: docker.whatsapp.biz
   WAEntContTag:
     Description: WhatsApp Enterprise client container's version (tag)
-    Default: v2.41.3
+    Default: v2.45.2
     Type: String
   ContainerLogDriver:
     Default: awslogs
@@ -321,6 +324,12 @@ Parameters:
     Description: Enable High availability
     Type: String
     AllowedValues: [enabled]
+    ConstraintDescription: must select a valid value
+  CostEffectiveEnabled:
+    Default: disable
+    Description: Enable Cost Effective
+    Type: String
+    AllowedValues: [enable, disable]
     ConstraintDescription: must select a valid value
   HostExporterEnabled:
     Default: enabled
@@ -385,7 +394,9 @@ Conditions:
   IsDBConnKeyConfigured:
     !And [Condition: IsDBConnEncrypted, !Not [!Equals [!Ref DBConnKey, ""]]]
   IsDBConnPersisted: !Equals [!Ref PersistDBConn, "enabled"]
-
+  IsCE: !And [!Equals [!Ref CostEffectiveEnabled, "enable"], !Equals [!Ref HAEnabled, "enabled"]]
+  IsNotCE: !Not [Condition: IsCE]
+  
   # Painful way to create conditions
   CreateMountTarget2:
     !Or [
@@ -417,82 +428,82 @@ Mappings:
       LoPendingJobs: 500
   MessageTypeMapToInstanceType:
     text:
-      "10": "c5.large"
-      "20": "c5.large"
-      "40": "c5.large"
-      "80": "c5.large"
-      "120": "c5.large"
-      "160": "c5.large"
-      "200": "c5.large"
-      "250": "c5.large"
-      "300": "c5.large"
-      "350": "c5.large"
+      "10": "largeC5"
+      "20": "largeC5"
+      "40": "largeC5"
+      "80": "largeC5"
+      "120": "largeC5"
+      "160": "largeC5"
+      "200": "largeC5"
+      "250": "largeC5"
+      "300": "largeC5"
+      "350": "largeC5"
     image1MB:
-      "10": "c5.xlarge"
-      "20": "c5.xlarge"
-      "40": "c5.xlarge"
-      "80": "c5.xlarge"
-      "120": "c5.xlarge"
-      "160": "c5.xlarge"
-      "200": "c5.xlarge"
-      "250": "c5.xlarge"
-      "300": "c5.2xlarge"
-      "350": "c5.2xlarge"
+      "10": "xlargeC5"
+      "20": "xlargeC5"
+      "40": "xlargeC5"
+      "80": "xlargeC5"
+      "120": "xlargeC5"
+      "160": "xlargeC5"
+      "200": "xlargeC5"
+      "250": "xlargeC5"
+      "300": "2xlargeC5"
+      "350": "2xlargeC5"
     image2MB:
-      "10": "c5.2xlarge"
-      "20": "c5.4xlarge"
-      "40": "c5.4xlarge"
-      "80": "c5.4xlarge"
-      "120": "c5.4xlarge"
-      "160": "c5.4xlarge"
-      "200": "c5.4xlarge"
-      "250": "c5.4xlarge"
-      "300": "c5.4xlarge"
-      "350": "c5.4xlarge"
+      "10": "2xlargeC5"
+      "20": "4xlargeC5"
+      "40": "4xlargeC5"
+      "80": "4xlargeC5"
+      "120": "4xlargeC5"
+      "160": "4xlargeC5"
+      "200": "4xlargeC5"
+      "250": "4xlargeC5"
+      "300": "4xlargeC5"
+      "350": "4xlargeC5"
     image4MB:
-      "10": "c5.4xlarge"
-      "20": "c5.4xlarge"
-      "40": "c5.4xlarge"
-      "80": "c5.4xlarge"
-      "120": "c5.4xlarge"
-      "160": "c5.4xlarge"
-      "200": "c5.4xlarge"
-      "250": "c5.4xlarge"
-      "300": "c5.4xlarge"
-      "350": "c5.4xlarge"
+      "10": "4xlargeC5"
+      "20": "4xlargeC5"
+      "40": "4xlargeC5"
+      "80": "4xlargeC5"
+      "120": "4xlargeC5"
+      "160": "4xlargeC5"
+      "200": "4xlargeC5"
+      "250": "4xlargeC5"
+      "300": "4xlargeC5"
+      "350": "4xlargeC5"
     video:
-      "10": "c5.large"
-      "20": "c5.large"
-      "40": "c5.large"
-      "80": "c5.large"
-      "120": "c5.large"
-      "160": "c5.large"
-      "200": "c5.large"
-      "250": "c5.large"
-      "300": "c5.large"
-      "350": "c5.large"
+      "10": "largeC5"
+      "20": "largeC5"
+      "40": "largeC5"
+      "80": "largeC5"
+      "120": "largeC5"
+      "160": "xlargeC5"
+      "200": "xlargeC5"
+      "250": "xlargeC5"
+      "300": "xlargeC5"
+      "350": "xlargeC5"
     audio:
-      "10": "c5.large"
-      "20": "c5.large"
-      "40": "c5.large"
-      "80": "c5.large"
-      "120": "c5.large"
-      "160": "c5.large"
-      "200": "c5.large"
-      "250": "c5.large"
-      "300": "c5.large"
-      "350": "c5.large"
+      "10": "largeC5"
+      "20": "largeC5"
+      "40": "largeC5"
+      "80": "largeC5"
+      "120": "largeC5"
+      "160": "largeC5"
+      "200": "largeC5"
+      "250": "largeC5"
+      "300": "largeC5"
+      "350": "largeC5"
     doc:
-      "10": "c5.large"
-      "20": "c5.large"
-      "40": "c5.large"
-      "80": "c5.large"
-      "120": "c5.large"
-      "160": "c5.large"
-      "200": "c5.large"
-      "250": "c5.large"
-      "300": "c5.large"
-      "350": "c5.large"
+      "10": "largeC5"
+      "20": "largeC5"
+      "40": "largeC5"
+      "80": "largeC5"
+      "120": "largeC5"
+      "160": "largeC5"
+      "200": "largeC5"
+      "250": "largeC5"
+      "300": "largeC5"
+      "350": "largeC5"
   EnvConfig:
     ThroughputMapToShards:
       "10": 2
@@ -516,7 +527,19 @@ Mappings:
       "250": 3
       "300": 3
       "350": 3
-    NumCoreappInstances:
+    NumCoreappInstancesForCE:
+      "2": 2
+      "4": 3
+      "8": 5
+      "16": 9
+      "32": 17
+    NumCoreappInstancesForNotCE:
+      "2": 3
+      "4": 5
+      "8": 9
+      "16": 17
+      "32": 33
+    NumCoreappContainers:
       "2": 3
       "4": 5
       "8": 9
@@ -561,6 +584,19 @@ Mappings:
       AMIID: ami-08d2d8b00f270d03b
     us-west-2: # Oregon
       AMIID: ami-0686851c4e7b1a8e1
+  InstanceTypeMapping:
+    InstanceTypeValues:
+      "largeC5": "c5.large"
+      "xlargeC5": "c5.xlarge"
+      "2xlargeC5": "c5.2xlarge"
+      "4xlargeC5": "c5.4xlarge"
+      "9xlargeC5": "c5.9xlarge"
+    MemoryLimits:
+      "largeC5": 1400
+      "xlargeC5": 3600
+      "2xlargeC5": 7000
+      "4xlargeC5": 14900
+      "9xlargeC5": 37900
 
 Resources:
   lambdaStack:
@@ -1100,7 +1136,20 @@ Resources:
           Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
             !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
-          MemoryReservation: "1024"
+          MemoryReservation:
+            !If [
+              IsCE,
+              !FindInMap [
+                InstanceTypeMapping,
+                MemoryLimits,
+                !FindInMap [
+                  MessageTypeMapToInstanceType,
+                  !Ref "MessageType",
+                  !Ref "EnvThroughput",
+                ],
+              ],
+              "1024",
+            ]
           PortMappings:
             - ContainerPort: 6250
             - ContainerPort: 6251
@@ -1292,22 +1341,46 @@ Resources:
         LaunchTemplateId: !Ref "ContainerInstances"
         Version: !GetAtt ContainerInstances.LatestVersionNumber
       MinSize:
-        !FindInMap [
-          EnvConfig,
-          NumCoreappInstances,
-          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        !If [
+          IsCE,
+          !FindInMap [
+            EnvConfig,
+            NumCoreappInstancesForCE,
+            !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+          ],
+          !FindInMap [
+            EnvConfig,
+            NumCoreappInstancesForNotCE,
+            !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+          ]
         ]
       MaxSize:
-        !FindInMap [
-          EnvConfig,
-          NumCoreappInstances,
-          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        !If [
+          IsCE,
+          !FindInMap [
+            EnvConfig,
+            NumCoreappInstancesForCE,
+            !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+          ],
+          !FindInMap [
+            EnvConfig,
+            NumCoreappInstancesForNotCE,
+            !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+          ]
         ]
       DesiredCapacity:
-        !FindInMap [
-          EnvConfig,
-          NumCoreappInstances,
-          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        !If [
+          IsCE,
+          !FindInMap [
+            EnvConfig,
+            NumCoreappInstancesForCE,
+            !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+          ],
+          !FindInMap [
+            EnvConfig,
+            NumCoreappInstancesForNotCE,
+            !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+          ]
         ]
       TargetGroupARNs: [!Ref WAEntTargetGroup]
     CreationPolicy:
@@ -1578,9 +1651,13 @@ Resources:
         SecurityGroupIds: [!GetAtt EcsSecurityGroup.GroupId]
         InstanceType:
           !FindInMap [
-            MessageTypeMapToInstanceType,
-            !Ref "MessageType",
-            !Ref "EnvThroughput",
+            InstanceTypeMapping,
+            InstanceTypeValues,
+            !FindInMap [
+              MessageTypeMapToInstanceType,
+              !Ref "MessageType",
+              !Ref "EnvThroughput",
+            ],
           ]
         BlockDeviceMappings:
           - DeviceName: "/dev/sda1"
@@ -2130,7 +2207,7 @@ Resources:
     Condition: IsHA
     Type: AWS::ECS::Service
     DependsOn:
-      - HAECSAutoScalingGroup
+      - HAECSAutoScalingGroupWeb
       - WAEntWebService
     Properties:
       Cluster: !Ref "ECSCluster"
@@ -2146,8 +2223,8 @@ Resources:
             - attribute:ecs.availability-zone in [${Zone}]
             - Zone: !Select [1, Fn::GetAZs: !Ref "AWS::Region"]
 
-  WAEntCoreappService:
-    Condition: IsHA
+  WAEntCECoreappService:
+    Condition: IsCE
     Type: AWS::ECS::Service
     DependsOn:
       - HAECSAutoScalingGroup
@@ -2157,7 +2234,35 @@ Resources:
       DesiredCount:
         !FindInMap [
           EnvConfig,
-          "NumCoreappInstances",
+          "NumCoreappContainers",
+          !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
+        ]
+      # Role: !GetAtt ECSScalingRole.Arn
+      TaskDefinition: !Ref "WAEntHACoreappTaskdefinition"
+      PlacementConstraints:
+        - Type: memberOf
+          Expression: !Sub
+            - attribute:ecs.availability-zone in [${Zone}]
+            - Zone: !Select [0, Fn::GetAZs: !Ref "AWS::Region"]
+      PlacementStrategies:
+        - Type: spread
+          Field: instanceId
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+
+  WAEntNotCECoreappService:
+    Condition: IsNotCE
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HAECSAutoScalingGroup
+      - WAEntMasterService
+    Properties:
+      Cluster: !Ref "ECSCluster"
+      DesiredCount:
+        !FindInMap [
+          EnvConfig,
+          "NumCoreappContainers",
           !FindInMap [EnvConfig, ThroughputMapToShards, !Ref "EnvThroughput"],
         ]
       # Role: !GetAtt ECSScalingRole.Arn
