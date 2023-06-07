@@ -47,7 +47,7 @@ resource "kubernetes_config_map" "env" {
     WA_DB_ENGINE                  = "MYSQL"
     WA_CONFIG_ON_DB               = "1"
     WA_RUNNING_ENV                = "GCP"
-    WA_APP_MULTICONNECT           = "1"
+    WA_APP_MULTICONNECT           = "0"
     WA_DB_CONNECTION_IDLE_TIMEOUT = "180000"
   }
 }

@@ -194,12 +194,11 @@ resource "kubernetes_deployment" "monitor" {
         }
 
         container {
-          image = "docker.whatsapp.biz/prometheus:${var.api-version}"
           name  = "prometheus"
-
-          security_context {
-            run_as_user = 0
-          }
+#
+#          security_context {
+#            run_as_user = 0
+#          }
 
           volume_mount {
             name       = local.prom-vol
@@ -231,7 +230,6 @@ resource "kubernetes_deployment" "monitor" {
 
 
         container {
-          image = "docker.whatsapp.biz/grafana:${var.api-version}"
           name  = "grafana"
 
           volume_mount {

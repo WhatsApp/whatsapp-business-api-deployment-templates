@@ -9,7 +9,7 @@
 
 # General Configuration
 variable "name-prefix" {
-  default = ""
+  default = "melunonroot"
 }
 
 # Filling out before you start
@@ -61,12 +61,12 @@ variable "message_type" {
 
 # WhatsApp Business API Configuration
 variable "api-version" {
-   default = "v2.45.2"
+   default = "v2.47.8"
 }
 
 # Database Configuration
 variable "dbusername" {
-  default = "dbadmin"
+  default = "root"
 }
 
 variable "dbpassword" {
@@ -76,7 +76,7 @@ variable "dbpassword" {
     condition     = length(var.dbpassword) > 0
     error_message = "Database admin user password cannot be empty. Should NOT contain any of these characters: ?{}&~!()^="
   }
-  default = ""
+  default = "root1234"
 }
 
 variable "DBCertURL" {
@@ -96,7 +96,7 @@ variable "mon-web-username" {
 
 #Login in password
 variable "mon-web-password" {
-  default = ""
+  default = "New$3cret"
   description = "Set the Grafana dashboard login password"
   validation {
     condition     = length(var.mon-web-password) > 0
@@ -132,5 +132,30 @@ variable "wabiz-web-password" {
     condition     = length(var.wabiz-web-password) >= 8 && length(var.wabiz-web-password) <= 64
     error_message = "Password needs to be 8-64 characters long with at least 1 digit, 1 uppercase letter, 1 lowercase letter and 1 special character"
   }
-  default = ""
+  default = "New$3cret"
+}
+
+variable "user_id" {
+  description = "The user ID for security context"
+  default = 9009
+}
+
+variable "group_id" {
+  description = "The group ID for security context"
+  default = 9009
+}
+
+variable "supp_group_min" {
+  description = "The minimum value for supplemental groups range"
+  default = 1
+}
+
+variable "supp_group_max" {
+  description = "The maximum value for supplemental groups range"
+  default = 9090
+}
+
+variable "run_as_non_root" {
+  description = "Specifies if we are running the application as non-root or not"
+  default = true
 }

@@ -40,7 +40,7 @@ locals {
 
 
 locals {
-  number_of_masterapp = 2
+  number_of_masterapp = 0
   mysql_credential_mount_path = "/var/mysql/credential"
   mysql_init_vol              = "mysql-init-vol"
   mysql_init_mount_path       = "/var/mysql/init"
@@ -57,7 +57,7 @@ locals {
   config_map_ref_name         = "config-env"
   config_map_ref_name_master  = "config-master"
   secret_map_ref_name         = "secret-env"
-  init_cmd                    = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && ./launch_within_docker.sh"                                                     #DB in VM
+  init_cmd                    = "export WA_DB_SSL_CA= && export WA_WEB_JWT_CRYPTO_KEY='V2hhdDVBcHBFbnRlcnByaTUzQzFpZW50SE1BQ1NlY3IzdAo=' && cd /opt/whatsapp/bin && ./launch_within_docker.sh"                                                     #DB in VM
   init_cmd_coreapp            = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && IP=$(hostname -I) && export COREAPP_HOSTNAME=$IP && ./launch_within_docker.sh" #DB in VM
 }
 
@@ -76,7 +76,8 @@ resource "kubernetes_deployment" "webapp" {
     }
   }
   spec {
-    replicas = var.map_web_server_count[var.throughput]
+    replicas = 1
+#    var.map_web_server_count[var.throughput]
     selector {
       match_labels = {
         type = "webapp"
@@ -116,8 +117,14 @@ resource "kubernetes_deployment" "webapp" {
           }
         }
 
+        security_context {
+          run_as_group    = var.group_id
+          run_as_non_root = var.run_as_non_root
+          run_as_user     = var.user_id
+          fs_group        = var.group_id
+        }
+
         container {
-          image = "docker.whatsapp.biz/web:${var.api-version}"
           name  = "webapp"
 
           command = ["/bin/sh", "-c"]
@@ -197,7 +204,8 @@ resource "kubernetes_deployment" "coreapp" {
   }
 
   spec {
-    replicas = var.map_shards_count[var.throughput] + 1 // one more for disconnected HA coreapp
+    replicas = 1
+#    var.map_shards_count[var.throughput] + 1 // one more for disconnected HA coreapp
     selector {
       match_labels = {
         type = "coreapp"
@@ -237,6 +245,13 @@ resource "kubernetes_deployment" "coreapp" {
           }
         }
 
+        security_context {
+          run_as_group    = var.group_id
+          run_as_non_root = var.run_as_non_root
+          run_as_user     = var.user_id
+          fs_group        = var.group_id
+        }
+
         volume {
           name = local.media_vol
           persistent_volume_claim {
@@ -249,7 +264,6 @@ resource "kubernetes_deployment" "coreapp" {
         }
 
         container {
-          image = "docker.whatsapp.biz/coreapp:${var.api-version}"
           name  = "coreapp"
 
           command = ["/bin/sh", "-c"]
@@ -368,8 +382,14 @@ resource "kubernetes_deployment" "masterapp" {
           }
         }
 
+        security_context {
+          run_as_group    = var.group_id
+          run_as_non_root = var.run_as_non_root
+          run_as_user     = var.user_id
+          fs_group        = var.group_id
+        }
+
         container {
-          image = "docker.whatsapp.biz/coreapp:${var.api-version}"
           name  = "masterapp"
 
           command = ["/bin/sh", "-c"]

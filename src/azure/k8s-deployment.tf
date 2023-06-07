@@ -151,6 +151,11 @@ resource "kubernetes_deployment" "webapp" {
             }
           }
 
+          security_context {
+            run_as_user = 9009
+            fs_group    = 9009
+          }
+
           port {
             container_port = 443
           }
@@ -274,6 +279,11 @@ resource "kubernetes_deployment" "coreapp" {
             }
           }
 
+#          security_context {
+#            run_as_user = 9009
+#            fs_group    = 9009
+#          }
+
           port {
             container_port = 6250
           }
@@ -387,6 +397,13 @@ resource "kubernetes_deployment" "masterapp" {
               name = local.secret_map_ref_name
             }
           }
+
+#          security_context {
+#            run_as_user  = "9009"
+#            run_as_group = "9009"
+#            fs_group     = "9009"
+#            run_as_non_root = true
+#          }
 
           port {
             container_port = 6250
