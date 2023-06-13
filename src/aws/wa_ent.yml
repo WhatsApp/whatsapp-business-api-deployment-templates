@@ -657,6 +657,14 @@ Resources:
       crypto-arn: !GetAtt KMSKey.Arn
       key: !Sub "${AWS::StackName}-WA_DB_PASSWORD"
       value: !Ref DBPassword
+  
+  StoreJWTSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}-WA_WEB_JWT_CRYPTO_KEY"
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: True
 
   StoreHostName:
     Type: AWS::SSM::Parameter
@@ -785,6 +793,7 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     DependsOn:
       - StoreHostName
+      - StoreJWTSecret
     Properties:
       ExecutionRoleArn: !GetAtt ECSTaskExecRole.Arn
       Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
@@ -890,6 +899,8 @@ Resources:
           Secrets:
             - Name: WA_DB_HOSTNAME
               ValueFrom: !Ref StoreHostName
+            - Name: WA_WEB_JWT_CRYPTO_KEY
+              ValueFrom: !Ref StoreJWTSecret
           Links: ["wa-coreapp"]
           LogConfiguration:
             LogDriver: !Ref "ContainerLogDriver"
@@ -920,6 +931,7 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     DependsOn:
       - StoreHostName
+      - StoreJWTSecret
     Properties:
       ExecutionRoleArn: !GetAtt ECSTaskExecRole.Arn
       Family: !Join ["", [wa-ent-, !Ref "AWS::StackName"]]
@@ -976,6 +988,8 @@ Resources:
           Secrets:
             - Name: WA_DB_HOSTNAME
               ValueFrom: !Ref StoreHostName
+            - Name: WA_WEB_JWT_CRYPTO_KEY
+              ValueFrom: !Ref StoreJWTSecret
           LogConfiguration:
             LogDriver: !Ref "ContainerLogDriver"
             Options:
@@ -1419,6 +1433,7 @@ Resources:
                 ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs"]
                 ECS_LOGLEVEL=info
                 ECS_CLUSTER=default
+                ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true
               mode: "000644"
               owner: "root"
               group: "root"
@@ -2352,6 +2367,29 @@ Resources:
             Action:
               - "sts:AssumeRole"
       Path: /whatsapp/
+
+  ECSSecretsManagerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECSSecretsManagerPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "ecr:GetAuthorizationToken"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "ssm:GetParameters"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "secretsmanager:GetSecretValue"
+            Resource: !Ref StoreJWTSecret
+      Roles: [!Ref "ECSTaskExecRole"]
 
   ECSScalingRole:
     Type: AWS::IAM::Role
