@@ -35,6 +35,8 @@ Metadata:
           - KeyName
           - WAEntContRegistry
           - WAEntContTag
+          - WAEntCoreappImageDigest
+          - WAEntWebImageDigest
       - Label:
           default: "Database configuration"
         Parameters:
@@ -100,6 +102,10 @@ Metadata:
         default: "WhatsApp Enterprise container registry"
       WAEntContTag:
         default: "WhatsApp Enterprise client (container) version"
+      WAEntCoreappImageDigest:
+        default: "WhatsApp Enterprise coreapp image digest"
+      WAEntWebImageDigest:
+        default: "WhatsApp Enterprise web image digest"
       ConfigOnDB:
         default: "Store configuration in database"
       DBHostname:
@@ -265,6 +271,14 @@ Parameters:
     Description: WhatsApp Enterprise client container's version (tag)
     Default: v2.41.3
     Type: String
+  WAEntCoreappImageDigest:
+    Description: WhatsApp Enterprise coreapp image digest
+    Type: String
+    Default: ''
+  WAEntWebImageDigest:
+    Description: WhatsApp Enterprise web image digest
+    Type: String
+    Default: ''
   ContainerLogDriver:
     Default: awslogs
     Description: Logging driver for container logs
@@ -801,7 +815,7 @@ Resources:
         - Name: wa-coreapp
           Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
-            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
+            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag, !Ref WAEntCoreappImageDigest]]
           MemoryReservation: "1024"
           MountPoints:
             - ContainerPath: /usr/local/waent/data
@@ -855,7 +869,7 @@ Resources:
         - Name: wa-web
           Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
-            !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag]]
+            !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag, !Ref WAEntWebImageDigest]]
           MemoryReservation: "512"
           VolumesFrom:
             - SourceContainer: wa-coreapp
@@ -939,7 +953,7 @@ Resources:
         - Name: wa-web
           Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
-            !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag]]
+            !Join ["", [!Ref WAEntContRegistry, "/web:", !Ref WAEntContTag, !Ref WAEntWebImageDigest]]
           MemoryReservation: "512"
           PortMappings:
             - ContainerPort: 443
@@ -1026,7 +1040,7 @@ Resources:
         - Name: wa-master
           Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
-            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
+            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag, !Ref WAEntCoreappImageDigest]]
           MemoryReservation: "1024"
           PortMappings:
             - ContainerPort: 6250
@@ -1113,7 +1127,7 @@ Resources:
         - Name: wa-coreapp
           Command: [ "/opt/whatsapp/bin/launch_within_docker.sh" ]
           Image:
-            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag]]
+            !Join ["", [!Ref WAEntContRegistry, "/coreapp:", !Ref WAEntContTag, !Ref WAEntCoreappImageDigest]]
           MemoryReservation: "1024"
           PortMappings:
             - ContainerPort: 6250
