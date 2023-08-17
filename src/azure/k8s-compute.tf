@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Azure Template Version 1.0.0
+# WhatsApp Business API Azure Template Version 1.0.1
 resource "azurerm_kubernetes_cluster" "waApi" {
   name                = module.naming.kubernetes_cluster.name_unique
   location            = azurerm_resource_group.waApi.location

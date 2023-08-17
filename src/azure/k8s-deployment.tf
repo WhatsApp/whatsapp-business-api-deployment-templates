@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Azure Template Version 1.0.0
+# WhatsApp Business API Azure Template Version 1.0.1
 
 locals {
   root-vol                  = "root-vol"
@@ -782,7 +782,7 @@ resource "kubernetes_stateful_set" "db" {
       spec {
         container {
           name              = "db-server"
-          image             = "mysql:5.7.35"
+          image             = "mysql:8.0.15"
           image_pull_policy = "IfNotPresent"
 
           # command = ["/bin/sh", "-c", "while true; do sleep 300; done;"]

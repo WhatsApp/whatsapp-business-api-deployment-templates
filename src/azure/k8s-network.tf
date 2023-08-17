@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Azure Template Version 1.0.0
+# WhatsApp Business API Azure Template Version 1.0.1
 resource "azurerm_public_ip" "waApi" {
   name                = "${module.naming.public_ip.name}-waApi"
   resource_group_name = "${module.naming.resource_group.name_unique}-aks-node"
