@@ -85,7 +85,7 @@ resource "kubernetes_stateful_set" "db" {
 
         container {
           name              = "db-server"
-          image             = "mysql:5.7.35"                                                                                |            image             = ""
+          image             = "mysql:8.0.34"                                                                                |            image             = ""
           image_pull_policy = "IfNotPresent"
 
 
