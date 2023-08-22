@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Azure Template Version 1.0.0
+# WhatsApp Business API GCP Template Version 1.0.1
 
 sleep 35s
 

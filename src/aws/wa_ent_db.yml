@@ -88,7 +88,7 @@ Parameters:
   DBEngineVersion:
     Description: The database engine Version
     Type: String
-    Default: 5.7.mysql_aurora.2.07.2
+    Default: 8.0.mysql_aurora.3.03.1
 
 Conditions:
   IsUnencrypted: !Equals [!Ref DBEncryptionKeyType, Unencrypted]

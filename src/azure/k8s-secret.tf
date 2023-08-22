@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Azure Template Version 1.0.0
+# WhatsApp Business API Azure Template Version 1.0.1
 
 locals {
   # data_source_name = "${var.dbusername}:${var.dbpassword}@(${azurerm_mysql_flexible_server.waApi.fqdn}:3306)/" #flexible server

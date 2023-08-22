@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Azure Template Version 1.0.0
+# WhatsApp Business API Azure Template Version 1.0.1
 
 resource "azurerm_virtual_network" "waNet" {
   name                = module.naming.virtual_network.name_unique
