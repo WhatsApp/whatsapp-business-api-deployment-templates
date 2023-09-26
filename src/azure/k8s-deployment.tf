@@ -57,8 +57,8 @@ locals {
   config_map_ref_name         = "config-env"
   config_map_ref_name_master  = "config-master"
   secret_map_ref_name         = "secret-env"
-  init_cmd                    = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && ./launch_within_docker.sh"                                                     #DB in VM
-  init_cmd_coreapp            = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && IP=$(hostname -I) && export COREAPP_HOSTNAME=$IP && ./launch_within_docker.sh" #DB in VM
+  init_cmd                    = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && ./launch_within_docker.sh"  #DB in VM
+  init_cmd_coreapp            = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && IP=$(hostname -I | awk '{print $1}') && export COREAPP_HOSTNAME=$IP && ./launch_within_docker.sh" #DB in VM
   # init_cmd         = "mkdir -p /opt/certs && echo \"Downloading CA bundle ...\" >> /var/log/whatsapp.log && cd /opt/certs && wget ${var.DBCertURL} -O ${var.DBConnCA} && ls -al ${var.DBConnCA} >> /var/log/whatsapp.log && cd /opt/whatsapp/bin && ./launch_within_docker.sh" # && while true; do sleep 30; done;" # && ./launch_within_docker.sh"
   # init_cmd_coreapp = "mkdir -p /opt/certs && echo \"Downloading CA bundle ...\" >> /var/log/whatsapp.log && cd /opt/certs && wget ${var.DBCertURL} -O ${var.DBConnCA} && ls -al ${var.DBConnCA} >> /var/log/whatsapp.log && cd /opt/whatsapp/bin && IP=$(hostname -I) && export COREAPP_HOSTNAME=$IP && ./launch_within_docker.sh"
 }

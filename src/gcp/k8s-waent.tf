@@ -58,7 +58,7 @@ locals {
   config_map_ref_name_master  = "config-master"
   secret_map_ref_name         = "secret-env"
   init_cmd                    = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && ./launch_within_docker.sh"                                                     #DB in VM
-  init_cmd_coreapp            = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && IP=$(hostname -I) && export COREAPP_HOSTNAME=$IP && ./launch_within_docker.sh" #DB in VM
+  init_cmd_coreapp            = "export WA_DB_SSL_CA= && cd /opt/whatsapp/bin && IP=$(hostname -I | awk '{print $1}') && export COREAPP_HOSTNAME=$IP && ./launch_within_docker.sh"
 }
 
 resource "kubernetes_deployment" "webapp" {
