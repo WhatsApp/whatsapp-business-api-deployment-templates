@@ -246,7 +246,7 @@ Parameters:
     AllowedValues: [enabled, disabled]
   DBConnCA:
     Description: CA to verify database connection
-    Default: https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem
+    Default: https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
     Type: String
   DBConnCert:
     Description: Client certificate for database connection
