@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API CFN Version 3.0.2
+# WhatsApp Business API CFN Version 3.0.3
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   AWS CloudFormation template to create WhatsApp Enterprise Client.
@@ -266,7 +266,7 @@ Parameters:
     Default: docker.whatsapp.biz
   WAEntContTag:
     Description: WhatsApp Enterprise client container's version (tag)
-    Default: v2.45.2
+    Default: v2.57.2
     Type: String
   ContainerLogDriver:
     Default: awslogs
@@ -558,32 +558,41 @@ Mappings:
       "350": "db.r5.8xlarge"
   # AMI id with 00000000 suffix is invalid, which regions are unsupported.
   AWSRegionToAMI:
-    ap-south-1: # Mumbai
-      AMIID: ami-026f33d38b6410e30
-    eu-west-2: # London
-      AMIID: ami-00000000
-    sa-east-1: # São Paulo
-      AMIID: ami-00000000
-    ap-northeast-1: # Tokyo
-      AMIID: ami-0ddea5e0f69c193a4
-    ap-northeast-2: # Seoul
-      AMIID: ami-0e4214f08b51e23cc
-    ap-southeast-1: # Singapore
-      AMIID: ami-0adfdaea54d40922b
-    ap-southeast-2: # Sydney
-      AMIID: ami-03d56f451ca110e99
-    eu-central-1: # Frankfurt
-      AMIID: ami-08b6d44b4f6f7b279
-    eu-west-1: # Ireland
-      AMIID: ami-04f5641b0d178a27a
-    us-east-1: # N. Virginia
-      AMIID: ami-00e87074e52e6c9f9
-    us-east-2: # Ohio
-      AMIID: ami-00f8e2c955f7ffa9b
-    us-west-1: # N. California
-      AMIID: ami-08d2d8b00f270d03b
-    us-west-2: # Oregon
-      AMIID: ami-0686851c4e7b1a8e1
+    ap-south-1:
+      AMIID: ami-064ac61091898694e
+    eu-north-1:
+      AMIID: ami-0e82a733fb827a38f
+    eu-west-3:
+      AMIID: ami-0e5736be34608455b
+    eu-west-2:
+      AMIID: ami-0aa938b5c246ef111
+    eu-west-1:
+      AMIID: ami-009f51225716cb42f
+    ap-northeast-3:
+      AMIID: ami-0bc54ca5eea7bb7b6
+    ap-northeast-2:
+      AMIID: ami-05ca84b0f62b22685
+    ap-northeast-1:
+      AMIID: ami-074c801439a538a43
+    ca-central-1:
+      AMIID: ami-0e9d8898441d3540d
+    sa-east-1:
+      AMIID: ami-02108349336c623e5
+    ap-southeast-1:
+      AMIID: ami-07dc7fbc73bffbeb5
+    ap-southeast-2:
+      AMIID: ami-0c0883406ea68dedc
+    eu-central-1:
+      AMIID: ami-049842bfd58f656fb
+    us-east-1:
+        AMIID: ami-0df2a11dd1fe1f8e3
+    us-east-2:
+      AMIID: ami-011d59a275b482a49
+    us-west-1:
+      AMIID: ami-084c852d3275c2e20
+    us-west-2:
+      AMIID: ami-094cc0ced7b91fcf0
+
   InstanceTypeMapping:
     InstanceTypeValues:
       "largeC5": "c5.large"
@@ -1488,13 +1497,10 @@ Resources:
                 yum update -y
                 yum install -y wget yum-utils
                 yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-                yum makecache fast
+                yum makecache
             02_pkg_install:
               command: |
-                yum install -y docker-ce mysql
-                yum install -y epel-release
-                yum install -y python-boto3
-                pip3 install awscli
+                yum install -y docker-ce mysql epel-release  python-boto3 awscli
         ecs_agent_setup:
           files:
             /etc/ecs/ecs.config:
@@ -1534,6 +1540,13 @@ Resources:
                 [Install]
                 WantedBy=default.target
               mode: "000644"
+              owner: "root"
+              group: "root"
+            /opt/whatsapp/bin/update_ecs_agent.sh:
+              content: |
+                echo "Updating ecs-agent..."
+                systemctl stop docker-container@ecs-agent.service && docker pull amazon/amazon-ecs-agent:latest && systemctl start docker-container@ecs-agent.service
+              mode: "000755"
               owner: "root"
               group: "root"
           commands:
@@ -1591,75 +1604,219 @@ Resources:
             03_permissions:
               command: !Sub
                 -  |
-                  chown centos:centos ${MntPoint}/data ${MntPoint}/media
+                  chown ec2-user:ec2-user ${MntPoint}/data ${MntPoint}/media
                   chmod -R a+rw ${MntPoint}/data ${MntPoint}/media
                 - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
         log_setup:
           files:
-            /tmp/awslogs-agent-setup.py:
-              source: https://s3.amazonaws.com//aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
-              mode: "000555"
+            /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json:
+              content: !Sub |
+                {
+                  "agent": {
+                    "run_as_user": "root"
+                  },
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "/var/log/cloud-init.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cloud-init.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cloud-init-output.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cloud-init-output.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cfn-init.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cfn-init.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cfn-hup.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cfn-hup.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cfn-wire.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cfn-wire.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/whatsapp.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/whatsapp.log",
+                            "timezone": "local"
+                          },
+                        ]
+                      }
+                    }
+                  }
+                }
+              mode: '000644'
               owner: root
               group: root
+            /opt/whatsapp/bin/ec2.py:
+              content: |
+                #!/usr/bin/env python
+                # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+
+                import argparse
+                import json
+                import sys
+
+                import boto3
+
+
+                class VPC:
+                    def __init__(self, region, vpcId, subnetIds):
+                        self.region = region
+                        self.vpcId = vpcId
+                        self.subnetIds = subnetIds.split(",")
+                        self.ec2 = boto3.client("ec2", region_name=region)
+
+                    def describeVpc(self):
+                        try:
+                            response = self.ec2.describe_vpcs(VpcIds=[self.vpcId])
+                            self.vpcInfo = response["Vpcs"]
+                            response = self.ec2.describe_vpc_attribute(
+                                Attribute="enableDnsSupport", VpcId=self.vpcId
+                            )
+                            self.dnsSupport = response["EnableDnsSupport"]
+                            response = self.ec2.describe_vpc_attribute(
+                                Attribute="enableDnsHostnames", VpcId=self.vpcId
+                            )
+                            self.enableDnsHostnames = response["EnableDnsHostnames"]
+                        except:
+                            print("Error:", sys.exc_info()[0])
+
+                    def describeSubnets(self):
+                        try:
+                            response = self.ec2.describe_subnets(SubnetIds=self.subnetIds)
+                            self.subnets = response["Subnets"]
+                        except:
+                            print("Error:", sys.exc_info()[0])
+
+                    def describeDhcpOptions(self):
+                        try:
+                            response = self.ec2.describe_dhcp_options(
+                                DhcpOptionsIds=[self.vpcInfo[0]["DhcpOptionsId"]]
+                            )
+                            self.dhcpOptions = response["DhcpOptions"]
+                        except:
+                            print("Error:", sys.exc_info()[0])
+
+                    def show(self):
+                        print("VPC Info:")
+                        print(json.dumps(self.vpcInfo, indent=2, sort_keys=True))
+                        print("DNS Support: ", self.dnsSupport["Value"])
+                        print("Enable DNS Hostnames: ", self.enableDnsHostnames["Value"])
+                        print("\nDHCP Options:")
+                        print(json.dumps(self.dhcpOptions, indent=2, sort_keys=True))
+                        print("\nSubnets:")
+                        print(json.dumps(self.subnets, indent=2, sort_keys=True))
+
+
+                def main():
+                    parser = argparse.ArgumentParser(description="AWS Utility")
+                    parser.add_argument("region", help="Region")
+                    parser.add_argument("vpc", help="VPC id")
+                    parser.add_argument("subnets", help="Subnet ids (comma separated)")
+                    args = parser.parse_args()
+
+                    if len(sys.argv) < 3:
+                        print("Invalid arguments")
+                        exit(1)
+
+                    vpc = VPC(args.region, args.vpc, args.subnets)
+                    vpc.describeVpc()
+                    vpc.describeSubnets()
+                    vpc.describeDhcpOptions()
+                    vpc.show()
+
+
+                if __name__ == "__main__":
+                    main()
+              mode: '000755'
+              owner: root
+              group: root
+
+            /opt/whatsapp/bin/docker_log_cleanup.sh:
+              content: |
+                docker ps | grep -E "docker.whatsapp.biz/(coreapp|web)" | cut -d " " -f 1 | while read -r line; do
+                  echo "Running log cleanup script for docker container $line"
+                  docker exec $line /opt/whatsapp/bin/cleanup.sh
+                done
+              mode: '000755'
+              owner: root
+              group: root
+
           commands:
             01_create_state_directory:
               command: |
                 mkdir -p /var/awslogs/state
                 # log rotate - archive directory
                 mkdir -p /var/log/whatsapp/archive
-            02_update_conf_files:
-              command: !Join
-                - ""
-                - - |
-                    # Copy conf file templates
-                    aws s3 cp s3://wa-biz-cfn/config/awslogs.conf.tmpl /etc/awslogs/awslogs.conf.tmpl
-                    aws s3 cp s3://wa-biz-cfn/config/awscli.conf.tmpl /etc/awslogs/awscli.conf.tmpl
-                    aws s3 cp s3://wa-biz-cfn/config/logrotate.conf /etc/logrotate.d/whatsapp
-                    chmod 444 /etc/awslogs/*.tmpl
-
-                    # Create sed command file
-                    SED_CMD_FILE=/tmp/sed.cmds
-                  - |+
-                  - echo "s#%cfnlogs%#"
-                  - !Ref WALogGroup
-                  - >
-                    "#g" > ${SED_CMD_FILE}
-                  - |+
-                  - echo "s#%region%#"
-                  - !Ref AWS::Region
-                  - >
-                    "#g" >> ${SED_CMD_FILE}
-                  - |+
-                    # Perform replacement/transformation of config files
-                    cd /etc/awslogs/
-                    for file in awslogs.conf awscli.conf; do
-                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
-                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
-                    done
-            03_run_awslogs_agent_setup:
-              command: !Sub |
-                python /tmp/awslogs-agent-setup.py --region ${AWS::Region} \
-                  -n -c /etc/awslogs/awslogs.conf
-            04_setup_wa_logs:
+            02_run_awslogs_agent_setup:
               command: |
-                # Copy script
-                aws s3 cp s3://wa-biz-cfn/scripts/ec2.py /opt/whatsapp/bin/ec2.py
-                chmod +x /opt/whatsapp/bin/ec2.py
+                wget https://s3.amazonaws.com/amazoncloudwatch-agent/centos/amd64/latest/amazon-cloudwatch-agent.rpm
+                rpm -U ./amazon-cloudwatch-agent.rpm
+            03_stop_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
+            04_start_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
             05_cronjob_docker_cleanup:
               command: |
                 # Setup a cron job to run the docker cleanup script every day.
-                aws s3 cp s3://wa-biz-cfn/scripts/docker_log_cleanup.sh /opt/whatsapp/bin/docker_log_cleanup.sh
-                chmod +x /opt/whatsapp/bin/docker_log_cleanup.sh
                 crontab -l > /tmp/crontab_docker_cleanup.txt
                 echo '0 0 * * * /opt/whatsapp/bin/docker_log_cleanup.sh' >> /tmp/crontab_docker_cleanup.txt
                 crontab /tmp/crontab_docker_cleanup.txt
-          services:
-            sysvinit:
-              awslogs:
-                enabled: "true"
-                ensureRunning: "true"
-                files:
-                  - /etc/awslogs/awslogs.conf
+          # Cfn-hup setting, it is to monitor the change of metadata.
+          # When there is change in the contents of json file in the metadata section, cfn-hup will call cfn-init to restart the AmazonCloudWatchAgent.
+          01_setupCfnHup:
+            files:
+              /etc/cfn/cfn-hup.conf:
+                content: !Sub |
+                  [main]
+                  stack=${AWS::StackId}
+                  region=${AWS::Region}
+                  interval=1
+                mode: "000400"
+                owner: root
+                group: root
+              /etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf:
+                content: !Sub |
+                  [cfn-auto-reloader-hook]
+                  triggers=post.update
+                  path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
+                  action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets UpdateEnvironment
+                  runas=root
+                mode: "000400"
+                owner: root
+                group: root
+              /lib/systemd/system/cfn-hup.service:
+                content: |
+                  [Unit]
+                  Description=cfn-hup daemon
+                  [Service]
+                  Type=simple
+                  ExecStart=/opt/aws/bin/cfn-hup
+                  Restart=always
+                  [Install]
+                  WantedBy=multi-user.target
+            commands:
+              01enable_cfn_hup:
+                command: systemctl enable cfn-hup.service
+              02start_cfn_hup:
+                command: systemctl start cfn-hup.service
+
     Properties:
       LaunchTemplateData:
         ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMIID]
@@ -1711,12 +1868,13 @@ Resources:
 
                 #!/bin/bash -xe
                 # Setup cfn-init, cfn-signal and cfn-hup script.
-                yum -y install epel-release
-                yum -y install python3
-                yum -y install python3-pip
+                yum -y update
+                yum -y install epel-release python3-pip
+                pip3 install --upgrade pip
+                pip3 install --upgrade setuptools
                 pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
-                cp -v /usr/local/init/redhat/cfn-hup /etc/init.d/cfn-hup
-                chmod +x /etc/init.d/cfn-hup
+
+                export PATH=$PATH:/usr/local/bin
 
                 # Invoke DockerConfig configset to setup docker and ecs agent.
                 cfn-init -v --stack ${AWS::StackName} --resource ContainerInstances --configsets DockerConfig --region ${AWS::Region}
@@ -1779,6 +1937,8 @@ Resources:
                 echo "Docker service start status: $result" >> /var/log/whatsapp.log
 
                 # Update ECS config file
+                ## Registers this EC2 instance in the particular ECS Cluster
+                mkdir -p /etc/ecs && touch /etc/ecs/ecs.config
                 echo "ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true" >> /etc/ecs/ecs.config #required for using SSM parameter store
                 echo "ECS_ENABLE_CONTAINER_METADATA=true" >> /etc/ecs/ecs.config
                 echo "ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=72h" >> /etc/ecs/ecs.config
@@ -1844,13 +2004,10 @@ Resources:
                 yum update -y
                 yum install -y wget yum-utils
                 yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-                yum makecache fast
+                yum makecache
             02_pkg_install:
               command: |
-                yum install -y docker-ce mysql
-                yum install -y epel-release
-                yum install -y python-boto3
-                pip3 install awscli
+                yum install -y docker-ce mysql epel-release  python-boto3 awscli
         ecs_agent_setup:
           files:
             /etc/ecs/ecs.config:
@@ -1889,6 +2046,13 @@ Resources:
                 [Install]
                 WantedBy=default.target
               mode: "000644"
+              owner: "root"
+              group: "root"
+            /opt/whatsapp/bin/update_ecs_agent.sh:
+              content: |
+                echo "Updating ecs-agent..."
+                systemctl stop docker-container@ecs-agent.service && docker pull amazon/amazon-ecs-agent:latest && systemctl start docker-container@ecs-agent.service
+              mode: "000755"
               owner: "root"
               group: "root"
           commands:
@@ -1945,74 +2109,217 @@ Resources:
                 - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
             03_permissions:
               command: !Sub
-                - chown centos:centos ${MntPoint}/data ${MntPoint}/media
+                - chown ec2-user:ec2-user ${MntPoint}/data ${MntPoint}/media
                 - { MntPoint: !FindInMap [Constants, Values, MountPoint] }
         log_setup:
           files:
-            /tmp/awslogs-agent-setup.py:
-              source: https://s3.amazonaws.com//aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
-              mode: "000555"
+            /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json:
+              content: !Sub |
+                {
+                  "agent": {
+                    "run_as_user": "root"
+                  },
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "/var/log/cloud-init.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cloud-init.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cloud-init-output.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cloud-init-output.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cfn-init.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cfn-init.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cfn-hup.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cfn-hup.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/cfn-wire.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/cfn-wire.log",
+                            "timezone": "local"
+                          },
+                          {
+                            "file_path": "/var/log/whatsapp.log",
+                            "log_group_name": !Ref WALogGroup,
+                            "log_stream_name": "{instance_id}/whatsapp.log",
+                            "timezone": "local"
+                          },
+                        ]
+                      }
+                    }
+                  }
+                }
+              mode: '000644'
               owner: root
               group: root
+            /opt/whatsapp/bin/ec2.py:
+              content: |
+                #!/usr/bin/env python
+                # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+
+                import argparse
+                import json
+                import sys
+
+                import boto3
+
+
+                class VPC:
+                    def __init__(self, region, vpcId, subnetIds):
+                        self.region = region
+                        self.vpcId = vpcId
+                        self.subnetIds = subnetIds.split(",")
+                        self.ec2 = boto3.client("ec2", region_name=region)
+
+                    def describeVpc(self):
+                        try:
+                            response = self.ec2.describe_vpcs(VpcIds=[self.vpcId])
+                            self.vpcInfo = response["Vpcs"]
+                            response = self.ec2.describe_vpc_attribute(
+                                Attribute="enableDnsSupport", VpcId=self.vpcId
+                            )
+                            self.dnsSupport = response["EnableDnsSupport"]
+                            response = self.ec2.describe_vpc_attribute(
+                                Attribute="enableDnsHostnames", VpcId=self.vpcId
+                            )
+                            self.enableDnsHostnames = response["EnableDnsHostnames"]
+                        except:
+                            print("Error:", sys.exc_info()[0])
+
+                    def describeSubnets(self):
+                        try:
+                            response = self.ec2.describe_subnets(SubnetIds=self.subnetIds)
+                            self.subnets = response["Subnets"]
+                        except:
+                            print("Error:", sys.exc_info()[0])
+
+                    def describeDhcpOptions(self):
+                        try:
+                            response = self.ec2.describe_dhcp_options(
+                                DhcpOptionsIds=[self.vpcInfo[0]["DhcpOptionsId"]]
+                            )
+                            self.dhcpOptions = response["DhcpOptions"]
+                        except:
+                            print("Error:", sys.exc_info()[0])
+
+                    def show(self):
+                        print("VPC Info:")
+                        print(json.dumps(self.vpcInfo, indent=2, sort_keys=True))
+                        print("DNS Support: ", self.dnsSupport["Value"])
+                        print("Enable DNS Hostnames: ", self.enableDnsHostnames["Value"])
+                        print("\nDHCP Options:")
+                        print(json.dumps(self.dhcpOptions, indent=2, sort_keys=True))
+                        print("\nSubnets:")
+                        print(json.dumps(self.subnets, indent=2, sort_keys=True))
+
+
+                def main():
+                    parser = argparse.ArgumentParser(description="AWS Utility")
+                    parser.add_argument("region", help="Region")
+                    parser.add_argument("vpc", help="VPC id")
+                    parser.add_argument("subnets", help="Subnet ids (comma separated)")
+                    args = parser.parse_args()
+
+                    if len(sys.argv) < 3:
+                        print("Invalid arguments")
+                        exit(1)
+
+                    vpc = VPC(args.region, args.vpc, args.subnets)
+                    vpc.describeVpc()
+                    vpc.describeSubnets()
+                    vpc.describeDhcpOptions()
+                    vpc.show()
+
+
+                if __name__ == "__main__":
+                    main()
+              mode: '000755'
+              owner: root
+              group: root
+
+            /opt/whatsapp/bin/docker_log_cleanup.sh:
+              content: |
+                docker ps | grep -E "docker.whatsapp.biz/(coreapp|web)" | cut -d " " -f 1 | while read -r line; do
+                  echo "Running log cleanup script for docker container $line"
+                  docker exec $line /opt/whatsapp/bin/cleanup.sh
+                done
+              mode: '000755'
+              owner: root
+              group: root
+
           commands:
             01_create_state_directory:
               command: |
                 mkdir -p /var/awslogs/state
                 # log rotate - archive directory
                 mkdir -p /var/log/whatsapp/archive
-            02_update_conf_files:
-              command: !Join
-                - ""
-                - - |
-                    # Copy conf file templates
-                    aws s3 cp s3://wa-biz-cfn/config/awslogs.conf.tmpl /etc/awslogs/awslogs.conf.tmpl
-                    aws s3 cp s3://wa-biz-cfn/config/awscli.conf.tmpl /etc/awslogs/awscli.conf.tmpl
-                    aws s3 cp s3://wa-biz-cfn/config/logrotate.conf /etc/logrotate.d/whatsapp
-                    chmod 444 /etc/awslogs/*.tmpl
-
-                    # Create sed command file
-                    SED_CMD_FILE=/tmp/sed.cmds
-                  - |+
-                  - echo "s#%cfnlogs%#"
-                  - !Ref WALogGroup
-                  - >
-                    "#g" > ${SED_CMD_FILE}
-                  - |+
-                  - echo "s#%region%#"
-                  - !Ref AWS::Region
-                  - >
-                    "#g" >> ${SED_CMD_FILE}
-                  - |+
-                    # Perform replacement/transformation of config files
-                    cd /etc/awslogs/
-                    for file in awslogs.conf awscli.conf; do
-                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
-                      sed -f ${SED_CMD_FILE} ${file}.tmpl > ${file}
-                    done
-            03_run_awslogs_agent_setup:
-              command: !Sub |
-                python /tmp/awslogs-agent-setup.py --region ${AWS::Region} \
-                  -n -c /etc/awslogs/awslogs.conf
-            04_setup_wa_logs:
+            02_run_awslogs_agent_setup:
               command: |
-                # Copy script
-                aws s3 cp s3://wa-biz-cfn/scripts/ec2.py /opt/whatsapp/bin/ec2.py
-                chmod +x /opt/whatsapp/bin/ec2.py
+                wget https://s3.amazonaws.com/amazoncloudwatch-agent/centos/amd64/latest/amazon-cloudwatch-agent.rpm
+                rpm -U ./amazon-cloudwatch-agent.rpm
+            03_stop_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
+            04_start_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
             05_cronjob_docker_cleanup:
               command: |
                 # Setup a cron job to run the docker cleanup script every day.
-                aws s3 cp s3://wa-biz-cfn/scripts/docker_log_cleanup.sh /opt/whatsapp/bin/docker_log_cleanup.sh
-                chmod +x /opt/whatsapp/bin/docker_log_cleanup.sh
                 crontab -l > /tmp/crontab_docker_cleanup.txt
                 echo '0 0 * * * /opt/whatsapp/bin/docker_log_cleanup.sh' >> /tmp/crontab_docker_cleanup.txt
                 crontab /tmp/crontab_docker_cleanup.txt
-          services:
-            sysvinit:
-              awslogs:
-                enabled: "true"
-                ensureRunning: "true"
-                files:
-                  - /etc/awslogs/awslogs.conf
+          # Cfn-hup setting, it is to monitor the change of metadata.
+          # When there is change in the contents of json file in the metadata section, cfn-hup will call cfn-init to restart the AmazonCloudWatchAgent.
+          01_setupCfnHup:
+            files:
+              /etc/cfn/cfn-hup.conf:
+                content: !Sub |
+                  [main]
+                  stack=${AWS::StackId}
+                  region=${AWS::Region}
+                  interval=1
+                mode: "000400"
+                owner: root
+                group: root
+              /etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf:
+                content: !Sub |
+                  [cfn-auto-reloader-hook]
+                  triggers=post.update
+                  path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
+                  action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets UpdateEnvironment
+                  runas=root
+                mode: "000400"
+                owner: root
+                group: root
+              /lib/systemd/system/cfn-hup.service:
+                content: |
+                  [Unit]
+                  Description=cfn-hup daemon
+                  [Service]
+                  Type=simple
+                  ExecStart=/opt/aws/bin/cfn-hup
+                  Restart=always
+                  [Install]
+                  WantedBy=multi-user.target
+            commands:
+              01enable_cfn_hup:
+                command: systemctl enable cfn-hup.service
+              02start_cfn_hup:
+                command: systemctl start cfn-hup.service
     Properties:
       LaunchTemplateData:
         ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMIID]
@@ -2055,12 +2362,13 @@ Resources:
 
                 #!/bin/bash -xe
                 # Setup cfn-init, cfn-signal and cfn-hup script.
-                yum -y install epel-release
-                yum -y install python3
-                yum -y install python3-pip
+                yum -y update
+                yum -y install epel-release python3-pip
+                pip3 install --upgrade pip
+                pip3 install --upgrade setuptools
                 pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
-                cp -v /usr/local/init/redhat/cfn-hup /etc/init.d/cfn-hup
-                chmod +x /etc/init.d/cfn-hup
+
+                export PATH=$PATH:/usr/local/bin
 
                 # Invoke DockerConfig configset to setup docker and ecs agent.
                 cfn-init -v --stack ${AWS::StackName} --resource WebContainerInstances --configsets DockerConfig --region ${AWS::Region}
@@ -2123,6 +2431,8 @@ Resources:
                 echo "Docker service start status: $result" >> /var/log/whatsapp.log
 
                 # Update ECS config file
+                ## Registers this EC2 instance in the particular ECS Cluster
+                mkdir -p /etc/ecs && touch /etc/ecs/ecs.config
                 echo "ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true" >> /etc/ecs/ecs.config #required for using SSM parameter store
                 echo "ECS_ENABLE_CONTAINER_METADATA=true" >> /etc/ecs/ecs.config
                 echo "ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=72h" >> /etc/ecs/ecs.config
@@ -2305,7 +2615,7 @@ Resources:
     Properties:
       ContainerDefinitions:
         - Name: cadvisor
-          Image: "google/cadvisor:v0.30.2"
+          Image: "google/cadvisor:v0.49.1"
           MemoryReservation: 128
           LogConfiguration:
             LogDriver: !Ref "ContainerLogDriver"
@@ -2565,6 +2875,36 @@ Resources:
               - "sts:AssumeRole"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: ECSManagementPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ecs:RegisterContainerInstance"
+                  - "ecs:DeregisterContainerInstance"
+                  - "ecs:Submit*"
+                  - "ecs:Poll"
+                  - "ecs:StartTelemetrySession"
+                  - "ecs:DiscoverPollEndpoint"
+                  - "ecs:UpdateContainerInstancesState"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "ecr:GetAuthorizationToken"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:GetRepositoryPolicy"
+                  - "ecr:DescribeRepositories"
+                  - "ecr:ListImages"
+                  - "ecr:DescribeImages"
+                  - "ecr:BatchGetImage"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
 
       Path: /whatsapp/
 
