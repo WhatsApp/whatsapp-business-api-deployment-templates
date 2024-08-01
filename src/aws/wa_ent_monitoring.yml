@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# WhatsApp Business API Instance Monitoring CFN Version 1.0.1
+# WhatsApp Business API Instance Monitoring CFN Version 1.0.2
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   AWS CloudFormation template to create instance monitoring for
@@ -140,32 +140,40 @@ Parameters:
 
 Mappings:
   AWSRegionToAMI:
-    ap-south-1: # Mumbai
-      AMIID: ami-026f33d38b6410e30
-    eu-west-2: # London
-      AMIID: ami-00000000
-    sa-east-1: # São Paulo
-      AMIID: ami-00000000
-    ap-northeast-1: # Tokyo
-      AMIID: ami-0ddea5e0f69c193a4
-    ap-northeast-2: # Seoul
-      AMIID: ami-0e4214f08b51e23cc
-    ap-southeast-1: # Singapore
-      AMIID: ami-0adfdaea54d40922b
-    ap-southeast-2: # Sydney
-      AMIID: ami-03d56f451ca110e99
-    eu-central-1: # Frankfurt
-      AMIID: ami-08b6d44b4f6f7b279
-    eu-west-1: # Ireland
-      AMIID: ami-04f5641b0d178a27a
-    us-east-1: # N. Virginia
-      AMIID: ami-00e87074e52e6c9f9
-    us-east-2: # Ohio
-      AMIID: ami-00f8e2c955f7ffa9b
-    us-west-1: # N. California
-      AMIID: ami-08d2d8b00f270d03b
-    us-west-2: # Oregon
-      AMIID: ami-0686851c4e7b1a8e1
+    ap-south-1:
+      AMIID: ami-064ac61091898694e
+    eu-north-1:
+      AMIID: ami-0e82a733fb827a38f
+    eu-west-3:
+      AMIID: ami-0e5736be34608455b
+    eu-west-2:
+      AMIID: ami-0aa938b5c246ef111
+    eu-west-1:
+      AMIID: ami-009f51225716cb42f
+    ap-northeast-3:
+      AMIID: ami-0bc54ca5eea7bb7b6
+    ap-northeast-2:
+      AMIID: ami-05ca84b0f62b22685
+    ap-northeast-1:
+      AMIID: ami-074c801439a538a43
+    ca-central-1:
+      AMIID: ami-0e9d8898441d3540d
+    sa-east-1:
+      AMIID: ami-02108349336c623e5
+    ap-southeast-1:
+      AMIID: ami-07dc7fbc73bffbeb5
+    ap-southeast-2:
+      AMIID: ami-0c0883406ea68dedc
+    eu-central-1:
+      AMIID: ami-049842bfd58f656fb
+    us-east-1:
+        AMIID: ami-0df2a11dd1fe1f8e3
+    us-east-2:
+      AMIID: ami-011d59a275b482a49
+    us-west-1:
+      AMIID: ami-084c852d3275c2e20
+    us-west-2:
+      AMIID: ami-094cc0ced7b91fcf0
 
 Resources:
   ECSCluster:
@@ -241,7 +249,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: mysqld-exporter
-          Image: "prom/mysqld-exporter:v0.10.0"
+          Image: "prom/mysqld-exporter:v0.14.0"
           MemoryReservation: "1024"
           LogConfiguration:
             LogDriver: awslogs
@@ -390,13 +398,10 @@ Resources:
                 yum update -y
                 yum install -y wget yum-utils
                 yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-                yum makecache fast
+                yum makecache
             02_pkg_install:
               command: |
-                yum install -y docker-ce mysql
-                yum install -y epel-release
-                yum install -y python-boto3
-                pip3 install awscli
+                yum  install -y docker-ce mysql epel-release  python-boto3 awscli
         ecs_agent_setup:
           ## See https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-agent-install.html
           files:
@@ -439,6 +444,13 @@ Resources:
               mode: "000644"
               owner: "root"
               group: "root"
+            /opt/whatsapp/bin/update_ecs_agent.sh:
+              content: |
+                echo "Updating ecs-agent..."
+                systemctl stop docker-container@ecs-agent.service && docker pull amazon/amazon-ecs-agent:latest && systemctl start docker-container@ecs-agent.service
+              mode: "000755"
+              owner: "root"
+              group: "root"
           commands:
             01_ecs_related:
               command: |
@@ -478,12 +490,13 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash -ex
           # Setup cfn-init, cfn-signal and cfn-hup script.
-          yum -y install epel-release
-          yum -y install python3
-          yum -y install python3-pip
+          yum -y update
+          yum -y install epel-release python3 python3-pip
+          pip3 install --upgrade pip
+          pip3 install --upgrade setuptools
           pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
-          cp -v /usr/local/init/redhat/cfn-hup /etc/init.d/cfn-hup
-          chmod +x /etc/init.d/cfn-hup
+
+          export PATH=$PATH:/usr/local/bin
 
           # Invoke DockerConfig configset to setup docker and ecs agent.
           cfn-init -v --stack ${AWS::StackName} --resource ContainerInstances --configsets DockerConfig --region ${AWS::Region}
