@@ -611,7 +611,7 @@ Resources:
   lambdaStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: "https://wa-biz-cfn.s3.us-west-2.amazonaws.com/wa_ent_lambda.yml"
+      TemplateURL: "<Replace with your own S3 object URL>"
       Parameters:
         LogRetentionDays: !Ref LogRetentionDays
 

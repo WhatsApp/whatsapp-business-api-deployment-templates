@@ -1,0 +1,232 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template that contains AWS Lambda functions used in
+  WhatsApp Enterprise client templates
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Logging configuration"
+        Parameters:
+          - LogRetentionDays
+    ParameterLabels:
+      LogRetentionDays:
+        default: "Number of days to retain lambda logs in CloudWatch"
+
+Parameters:
+  LogRetentionDays:
+    Default: '7'
+    Description: Number of days to retain logs in CloudWatch
+    Type: Number
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+    ConstraintDescription: must select a valid retention value
+
+Resources:
+  StoreParameterLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt  LambdaRole.Arn
+      MemorySize: 128
+      Timeout: 60
+      Runtime: python3.8
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import boto3
+          import urllib3
+          from botocore.exceptions import ClientError
+
+          LOG = logging.getLogger()
+          logging.basicConfig(level=logging.INFO)
+          LOG.setLevel(logging.INFO)
+
+          SUCCESS = 'SUCCESS'
+          FAILED = 'FAILED'
+
+          http = urllib3.PoolManager()
+
+          def responseBody(evt, ctx, status, data, echo = False):
+            if status == FAILED:
+              return {
+                'Status': status,
+                'Reason': data['Message']
+              }
+            else:
+              return {
+                'Status': status,
+                'Reason': 'completed',
+                'PhysicalResourceId': evt['StackId'] or ctx.log_stream_name,
+                'StackId': evt['StackId'],
+                'RequestId': evt['RequestId'],
+                'LogicalResourceId': evt['LogicalResourceId'],
+                'NoEcho': not echo,
+                'Data': data
+              }
+
+          def send(evt, ctx, status, data = {}, echo = False):
+            if 'ResponseURL' in evt:
+              body = responseBody(evt, ctx, status, data, echo)
+              jsonBody = json.dumps(body)
+
+              if echo:
+                LOG.info(f"Response: {jsonBody}")
+
+              headers = {
+                'content-type': '',
+                'content-length': str(len(jsonBody))
+              }
+
+              try:
+                response = http.request(
+                  'PUT',
+                  evt['ResponseURL'],
+                  headers=headers,
+                  body=jsonBody
+                )
+                LOG.info(f"Status: {response.status}")
+              except Exception as exp:
+                raise Exception(f"send(): {exp}")
+            else:
+              LOG.error('send(): ResponseURL not found')
+
+          def myException(evt, ctx, msg):
+            LOG.warning(msg)
+            data = { 'Message': msg }
+            send(evt, ctx, FAILED, data, True)
+            raise Exception(msg)
+
+          def validate(evt, ctx):
+            if 'StackId' not in evt or 'ResourceProperties' not in evt:
+              myException(evt, ctx, 'validate(): Missing StackId or ResourceProperties')
+
+            params = [ 'crypto-arn', 'key', 'value' ]
+            if not all(p in evt['ResourceProperties'] for p in params):
+              myException(evt, ctx, 'validate(): Required parameters missing')
+
+            LOG.info(f"Stack ID : {evt['StackId']}")
+
+          def cfn_create(evt, ctx):
+            store_password(evt, ctx)
+            send(evt, ctx, SUCCESS)
+
+          def cfn_delete(evt, ctx):
+            delete_password(evt, ctx)
+            send(evt, ctx, SUCCESS)
+
+          def store_password(evt, ctx):
+            try:
+              props = evt['ResourceProperties']
+              cli = boto3.client('ssm')
+              cli.put_parameter(Name=props['key'], Value=str(props['value']),
+                Type='SecureString', KeyId=props['crypto-arn'], Overwrite=True)
+            except Exception as exp:
+              myException(evt, ctx, f"store_password(): {exp}")
+
+          def delete_password(evt, ctx):
+            try:
+              cli = boto3.client('ssm')
+              cli.delete_parameter(Name=evt['ResourceProperties']['key'])
+            except ClientError as cExp:
+              if cExp.response['Error']['Code'] == 'ParameterNotFound':
+                LOG.info('Parameter does not exist, but continuing execution')
+            except Exception as exp:
+              myException(evt, ctx, f"delete_password(): {exp}")
+
+          def handler(evt, ctx):
+            validate(evt, ctx)
+            req = evt['RequestType']
+            if req == 'Create' or req == 'Update':
+              cfn_create(evt, ctx)
+            elif req == 'Delete':
+              cfn_delete(evt, ctx)
+
+  LambdaLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DependsOn: StoreParameterLambda
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Join ['', ['/aws/lambda/', !Ref StoreParameterLambda]]
+      RetentionInDays: !Ref LogRetentionDays
+
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      Path: /whatsapp/
+
+  CFNPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CFNPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'cloudformation:DescribeStacks'
+            Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:*'
+      Roles: [!Ref 'LambdaRole']
+
+  LogPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LogPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogStream'
+              - 'logs:CreateLogGroup'
+              - 'logs:PutLogEvents'
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+      Roles: [!Ref 'LambdaRole']
+
+  KMSPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: KMSPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:ReEncrypt*'
+            Resource: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+      Roles: [!Ref 'LambdaRole']
+
+  SSMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SSMPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'ssm:PutParameter'
+              - 'ssm:GetParameter'
+              - 'ssm:DeleteParameter'
+            Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*'
+      Roles: [!Ref 'LambdaRole']
+
+Outputs:
+  StoreParameterLambdaArn:
+    Description: Store Parameter Lambda
+    Value: !GetAtt StoreParameterLambda.Arn
