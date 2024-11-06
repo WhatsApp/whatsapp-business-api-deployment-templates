@@ -946,7 +946,6 @@ Resources:
               ValueFrom: !Ref StoreHostName
             - Name: WA_WEB_JWT_CRYPTO_KEY
               ValueFrom: !Ref StoreJWTSecret
-          Links: ["wa-coreapp"]
           LogConfiguration:
             LogDriver: !Ref "ContainerLogDriver"
             Options:
