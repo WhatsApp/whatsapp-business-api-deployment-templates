@@ -1,5 +1,7 @@
 # WhatsApp Business API (On-Premises) Deployment Templates
 
+**Warning: The WhatsApp Business On-premises API is now deprecated. Please use the WhatsApp Business Cloud API instead. For more information, please visit: https://developers.facebook.com/docs/whatsapp/cloud-api.**
+
 This repository contains Infra-as-Code templates that create cloud services hosting WhatsApp Business API (On-Premises) with desired throughput on various public cloud platforms, including AWS, Azure & GCP.
 
 For more details related to WhatsApp Business API (On-Premises), please visit the documentation at: https://developers.facebook.com/docs/whatsapp/on-premises.
